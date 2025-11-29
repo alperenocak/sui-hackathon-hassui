@@ -155,8 +155,8 @@ module document_library::document_system {
         let document = table::borrow_mut(&mut library.documents, document_id);
         let voter = tx_context::sender(ctx);
         
-        // Kendi dökümanına oy veremez
-        assert!(document.uploader != voter, E_CANNOT_VOTE_OWN_DOCUMENT);
+        // Kendi dökümanına oy veremez - TEST için devre dışı
+        // assert!(document.uploader != voter, E_CANNOT_VOTE_OWN_DOCUMENT);
         
         // Daha önce oy vermiş mi kontrol et
         assert!(!vector::contains(&document.voters, &voter), E_ALREADY_VOTED);

@@ -116,6 +116,8 @@ function LoginPage({ theme, setTheme }: LoginPageProps) {
   // 🚀 Auto-redirect when wallet is connected
   useEffect(() => {
     if (currentAccount) {
+      // Wallet bağlandı, logout flag'ini temizle
+      localStorage.removeItem('wallet_logged_out');
       setTimeout(() => {
         navigate('/app');
       }, 1000);
@@ -124,11 +126,7 @@ function LoginPage({ theme, setTheme }: LoginPageProps) {
 
   // 🔁 Google'dan dönüşte URL'deki id_token'ı yakala
   useEffect(() => {
-    // Debug log
-    console.log('=== zkLogin Redirect Debug ===');
-    console.log('Full URL:', window.location.href);
-    console.log('Hash:', window.location.hash);
-    
+
     // Google OAuth id_token'ı URL fragment (#) içinde döndürür, query string (?) içinde değil
     // Örnek: http://localhost:5173/#id_token=xxx&authuser=0
     const hash = window.location.hash.substring(1); // # işaretini kaldır
@@ -141,7 +139,6 @@ function LoginPage({ theme, setTheme }: LoginPageProps) {
       idToken = url.searchParams.get('id_token');
     }
     
-    console.log('idToken:', idToken ? 'FOUND' : 'NULL');
     
     if (!idToken) return;
 
@@ -173,6 +170,9 @@ function LoginPage({ theme, setTheme }: LoginPageProps) {
       name: decoded.name,
       picture: decoded.picture,
     }));
+    
+    // Logout flag'ini temizle
+    localStorage.removeItem('wallet_logged_out');
     
     setZkStatus('zkLogin oturumu aktif. Bu adresle Sui üzerinde işlem yapabilirsin.');
     

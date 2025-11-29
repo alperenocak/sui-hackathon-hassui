@@ -74,7 +74,6 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
     
     if (storedAddress) {
       setZkLoginAddress(storedAddress);
-      console.log('zkLogin adresi yüklendi:', storedAddress);
     }
     if (storedUserInfo) {
       try {
@@ -111,6 +110,8 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
     if (walletAddress) {
       disconnectWallet();
     }
+    // Logout flag'ini ayarla (sayfa yenilendiğinde autoConnect çalışmasın)
+    localStorage.setItem('wallet_logged_out', 'true');
     // zkLogin verilerini temizle
     sessionStorage.removeItem('zklogin_address');
     sessionStorage.removeItem('zklogin_user_info');
@@ -147,14 +148,12 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
       '/walrus-api-4',  // https://testnet-publisher.walrus.graphyte.dev
     ];
 
-    console.log('Walrus\'a yükleniyor...');
-    console.log('Dosya:', file.name, 'Boyut:', file.size, 'Tip:', file.type);
+
 
     let lastError: Error | null = null;
 
     for (const proxyEndpoint of PROXY_ENDPOINTS) {
       try {
-        console.log(`Deneniyor: ${proxyEndpoint}`);
         
         const response = await fetch(`${proxyEndpoint}/v1/blobs?epochs=5`, {
           method: 'PUT',
@@ -172,7 +171,6 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
         }
 
         const result = await response.json();
-        console.log('Walrus response (full):', JSON.stringify(result, null, 2));
         
         // Response yapısı: { newlyCreated: { blobObject: { blobId: "..." } } } 
         // veya { alreadyCertified: { blobId: "..." } }
@@ -180,9 +178,6 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
                        result.alreadyCertified?.blobId ||
                        result.blobId;
         
-        console.log('Parsed blobId:', blobId);
-        console.log('newlyCreated:', result.newlyCreated);
-        console.log('alreadyCertified:', result.alreadyCertified);
         
         if (!blobId) {
           console.warn('Blob ID bulunamadı:', result);
@@ -192,8 +187,6 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
 
         setWalrusUploadStatus('success');
         setUploadForm(prev => ({ ...prev, walrusBlobId: blobId }));
-        console.log('✅ Walrus upload başarılı! Blob ID:', blobId);
-        console.log('🔗 Walrus URL:', `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${blobId}`);
         return blobId;
       } catch (err) {
         console.warn(`${proxyEndpoint} hatası:`, err);
@@ -309,13 +302,15 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
       }))
     : mockDocuments;
 
-  const leaderboard: LeaderboardUser[] = [
-    { rank: 1, address: '0x12...ab', points: 1250 },
-    { rank: 2, address: '0x34...cd', points: 980 },
-    { rank: 3, address: '0x56...ef', points: 750 },
-    { rank: 4, address: '0x78...gh', points: 620 },
-    { rank: 5, address: '0x9a...ij', points: 510 },
-  ];
+  // Leaderboard: En fazla beğeni alan dokümanlar (top 5)
+  const leaderboard: LeaderboardUser[] = [...documents]
+    .sort((a, b) => b.likes - a.likes)
+    .slice(0, 5)
+    .map((doc, index) => ({
+      rank: index + 1,
+      address: doc.title,
+      points: doc.likes,
+    }));
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
@@ -339,13 +334,15 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
 
     // Mock document ise gerçek oy gönderme
     if (docId.length < 10) {
-      console.log('Mock document, skipping blockchain vote');
       return;
     }
 
     try {
       await vote(docId);
-      setTimeout(() => refetchDocuments(), 2000);
+      // Biraz bekle ve yeniden çek
+      setTimeout(() => {
+        refetchDocuments();
+      }, 3000);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('E_ALREADY_VOTED') || errorMessage.includes('0')) {
@@ -358,12 +355,9 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
     }
   };
 
-  const openWalrusLink = (blobId: string, title?: string) => {
+  const openWalrusLink = (blobId: string) => {
     // Walrus Aggregator URL
     const walrusUrl = `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${blobId}`;
-    
-    // Blob ID'yi konsola yazdır (debug için)
-    console.log('Opening Walrus file:', { blobId, title, url: walrusUrl });
     
     // Direkt URL'i aç - tarayıcı dosyayı indirecek
     // Kullanıcı indirilen dosyanın uzantısını .pdf olarak değiştirmeli
@@ -374,7 +368,6 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
   const downloadWalrusFile = async (blobId: string, filename: string) => {
     try {
       const walrusUrl = `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${blobId}`;
-      console.log('Downloading:', walrusUrl);
       
       const response = await fetch(walrusUrl);
       if (!response.ok) throw new Error('Download failed');
@@ -397,7 +390,6 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      console.log('Download complete:', finalFilename);
     } catch (error) {
       console.error('Download error:', error);
       alert('Dosya indirilemedi. Lütfen tekrar deneyin.');
@@ -426,7 +418,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
         }
       >
         <h2 className={`text-lg font-bold ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`}>
-          Leaderboard
+          🏆 Top Dokümanlar
         </h2>
         <div className="space-y-2">
           {leaderboard.map((user, index) => (
@@ -442,11 +434,11 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
               <div className="flex items-center gap-2">
                 {getRankIcon(user.rank)}
                 <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-mono truncate ${isDark ? 'text-slate-200' : 'text-[#A59D84]'}`}>
+                  <p className={`text-xs font-medium truncate ${isDark ? 'text-slate-200' : 'text-[#A59D84]'}`}>
                     {user.address}
                   </p>
                   <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-[#A59D84]/70'}`}>
-                    {user.points} pts
+                    ❤️ {user.points} beğeni
                   </p>
                 </div>
               </div>
@@ -843,7 +835,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      onClick={() => openWalrusLink(selectedDoc.blobId, selectedDoc.title)}
+                      onClick={() => openWalrusLink(selectedDoc.blobId)}
                       disabled={selectedDoc.blobId.startsWith('blob')} // Mock data için devre dışı
                       className={`flex-1 flex items-center justify-center gap-3 py-4 px-6 rounded-xl text-lg font-semibold shadow-lg ${
                         selectedDoc.blobId.startsWith('blob')

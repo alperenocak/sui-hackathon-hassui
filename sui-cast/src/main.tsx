@@ -26,11 +26,15 @@ const { networkConfig } = createNetworkConfig({
 
 const queryClient = new QueryClient();
 
+// Kullanıcı manuel logout yapmadıysa autoConnect aktif olsun
+const shouldAutoConnect = localStorage.getItem('wallet_logged_out') !== 'true';
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <SuiClientProvider networks={networkConfig} defaultNetwork="testnet">
         <WalletProvider
+          autoConnect={shouldAutoConnect}
           theme={[
             // Varsayılan: light (html/body'de 'dark' class yoksa)
             { variables: lightTheme },

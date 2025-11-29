@@ -248,8 +248,8 @@ export function useDocuments() {
     setLoading(true);
     
     try {
-      // DocumentUploaded eventlerini çek
-      const events = await client.queryEvents({
+      // DocumentUploaded event'lerini çek
+      const uploadEvents = await client.queryEvents({
         query: {
           MoveEventType: `${PACKAGE_ID}::document_system::DocumentUploaded`,
         },
@@ -257,63 +257,44 @@ export function useDocuments() {
         order: "descending",
       });
 
-      // DocumentLibrary'nin dynamic field'larını çek
-      const dynamicFields = await client.getDynamicFields({
-        parentId: DOCUMENT_LIBRARY_ID,
+      // DocumentVoted event'lerini çek - son vote sayılarını almak için
+      const voteEvents = await client.queryEvents({
+        query: {
+          MoveEventType: `${PACKAGE_ID}::document_system::DocumentVoted`,
+        },
+        limit: 100,
+        order: "descending",
       });
 
-      // Her dynamic field için içeriği çek
-      const docsFromFields: Document[] = [];
-      
-      for (const field of dynamicFields.data) {
-        try {
-          const fieldObject = await client.getDynamicFieldObject({
-            parentId: DOCUMENT_LIBRARY_ID,
-            name: field.name,
-          });
-          
-          if (fieldObject.data?.content?.dataType === "moveObject") {
-            const fields = fieldObject.data.content.fields as any;
-            
-            // value içindeki fields'ı kontrol et (nested olabilir)
-            const docFields = fields.value?.fields || fields.value || fields;
-            
-            docsFromFields.push({
-              id: fieldObject.data.objectId,
-              title: docFields.title || "",
-              description: docFields.description || "",
-              walrusBlobId: docFields.walrus_blob_id || docFields.blob_id || "",
-              uploader: docFields.uploader || docFields.owner || "",
-              uploadTimestamp: Number(docFields.upload_timestamp || docFields.timestamp || 0),
-              votes: Number(docFields.votes || 0),
-              category: docFields.category || "",
-            });
-          }
-        } catch (err) {
-          console.warn('Could not fetch dynamic field:', field.name);
+      // Her document için en son vote count'u bul
+      const latestVotes: Record<string, number> = {};
+      for (const event of voteEvents.data) {
+        const parsedJson = event.parsedJson as any;
+        const docId = parsedJson.document_id;
+        // Sadece ilk (en son) event'i al
+        if (!latestVotes[docId]) {
+          latestVotes[docId] = Number(parsedJson.new_vote_count || 0);
         }
       }
 
-      // Eğer dynamic field'lardan document gelmediyse, event'lerden oluştur
-      if (docsFromFields.length > 0) {
-        setDocuments(docsFromFields);
-      } else {
-        // Fallback: Event'lerden oluştur (walrusBlobId event'te yok - Move contract güncellemesi gerekli)
-        const docsFromEvents: Document[] = events.data.map((event) => {
-          const parsedJson = event.parsedJson as any;
-          return {
-            id: parsedJson.document_id,
-            title: parsedJson.title || "",
-            description: parsedJson.description || "",
-            walrusBlobId: parsedJson.walrus_blob_id || "",
-            uploader: parsedJson.uploader,
-            uploadTimestamp: Number(parsedJson.timestamp || 0),
-            votes: 0,
-            category: parsedJson.category || "",
-          };
-        });
-        setDocuments(docsFromEvents);
-      }
+      // Document'ları oluştur
+      const docs: Document[] = uploadEvents.data.map((event) => {
+        const parsedJson = event.parsedJson as any;
+        const docId = parsedJson.document_id;
+        
+        return {
+          id: docId,
+          title: parsedJson.title || "",
+          description: parsedJson.description || "",
+          walrusBlobId: parsedJson.walrus_blob_id || "",
+          uploader: parsedJson.uploader,
+          uploadTimestamp: Number(parsedJson.timestamp || 0),
+          votes: latestVotes[docId] || 0, // Vote event'ten al
+          category: parsedJson.category || "",
+        };
+      });
+
+      setDocuments(docs);
     } catch (err) {
       console.error("Error fetching documents:", err);
     } finally {

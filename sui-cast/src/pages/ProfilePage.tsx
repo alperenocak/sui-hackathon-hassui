@@ -1,14 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Moon, Sun, FileText, Award, Trophy, Medal, ArrowLeft, Edit2, Check, X } from 'lucide-react';
+import { Moon, Sun, FileText, Award, Trophy, Medal, ArrowLeft, Edit2, Check, X, Heart, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-
-interface UserProject {
-  id: string;
-  title: string;
-  description: string;
-  likes: number;
-}
+import { useCurrentAccount } from '@mysten/dapp-kit';
+import { useDocuments } from '../lib/hooks';
 
 interface NFT {
   id: string;
@@ -35,18 +30,35 @@ function ProfilePage({ theme, setTheme }: ProfilePageProps) {
   const isDark = theme === 'dark';
   const [isOwner, setIsOwner] = useState(false);
 
-  // Mock data
-  const userRank: number = 1;
-  const userPoints = 1250;
+  // Wallet ve blockchain hooks
+  const account = useCurrentAccount();
+  const { documents: blockchainDocs, loading: docsLoading, refetch: refetchDocuments } = useDocuments();
 
-  const userProjects: UserProject[] = [
-    { id: '1', title: 'Push_Swap', description: 'Sıralama algoritması', likes: 124 },
-    { id: '2', title: 'Philosophers', description: 'Threading projesi', likes: 98 },
-    { id: '3', title: 'Minishell', description: 'Shell uygulaması', likes: 156 },
-    { id: '4', title: 'Cub3D', description: '3D oyun motoru', likes: 87 },
-    { id: '5', title: 'Webserv', description: 'HTTP server', likes: 112 },
-    { id: '6', title: 'ft_containers', description: 'STL containers', likes: 95 },
-  ];
+  // İlk yüklemede dokümanları çek
+  useEffect(() => {
+    refetchDocuments();
+  }, []);
+
+  // Kullanıcıya ait dokümanları filtrele
+  const currentUserAddress = account?.address || sessionStorage.getItem('zklogin_address');
+  const viewingAddress = address || currentUserAddress;
+  
+  const userProjects = blockchainDocs
+    .filter(doc => doc.uploader === viewingAddress)
+    .map(doc => ({
+      id: doc.id,
+      title: doc.title,
+      description: doc.description || 'Açıklama yok',
+      likes: doc.votes,
+      blobId: doc.walrusBlobId,
+      category: doc.category,
+    }));
+
+  // Kullanıcının toplam puanı (aldığı toplam beğeni)
+  const userPoints = userProjects.reduce((total, project) => total + project.likes, 0);
+
+  // Mock data - NFT'ler için
+  const userRank: number = 1;
 
   const nfts: NFT[] = [
     { id: '1', name: 'Golden Trophy', image: '🏆', rarity: 'legendary' },
@@ -430,8 +442,37 @@ function ProfilePage({ theme, setTheme }: ProfilePageProps) {
           transition={{ delay: 0.3 }}
         >
           <h3 className={`text-2xl font-bold mb-4 ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`}>
-            Projelerim
+            Projelerim ({userProjects.length})
           </h3>
+          
+          {docsLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <Loader2 className={`w-8 h-8 animate-spin ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`} />
+            </div>
+          ) : userProjects.length === 0 ? (
+            <div className={`p-8 rounded-xl border-2 text-center ${
+              isDark ? 'bg-[#412B6B]/30 border-[#5C3E94]/40' : 'bg-white border-[#C1BAA1]/40'
+            }`}>
+              <FileText className={`w-12 h-12 mx-auto mb-3 ${isDark ? 'text-slate-500' : 'text-[#A59D84]/50'}`} />
+              <p className={`text-lg ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`}>
+                Henüz yüklenmiş döküman yok
+              </p>
+              {isOwner && (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => navigate('/app')}
+                  className={`mt-4 px-6 py-2 rounded-lg font-semibold ${
+                    isDark 
+                      ? 'bg-[#F25912] text-white hover:bg-[#F25912]/80' 
+                      : 'bg-[#A59D84] text-white hover:bg-[#A59D84]/80'
+                  }`}
+                >
+                  İlk Dökümanını Yükle
+                </motion.button>
+              )}
+            </div>
+          ) : (
           <div className="grid grid-cols-3 gap-4">
             {userProjects.map((project, index) => (
               <motion.div
@@ -454,19 +495,30 @@ function ProfilePage({ theme, setTheme }: ProfilePageProps) {
                   >
                     <FileText className={`w-5 h-5 ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`} />
                   </div>
-                  <h4 className={`font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                    {project.title}
-                  </h4>
+                  <div className="flex-1 min-w-0">
+                    <h4 className={`font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                      {project.title}
+                    </h4>
+                    {project.category && (
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        isDark ? 'bg-[#5C3E94]/50 text-slate-300' : 'bg-[#A59D84]/20 text-[#A59D84]'
+                      }`}>
+                        {project.category}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <p className={`text-sm mb-3 ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`}>
+                <p className={`text-sm mb-3 line-clamp-2 ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`}>
                   {project.description}
                 </p>
-                <div className={`text-xs ${isDark ? 'text-slate-500' : 'text-[#A59D84]/70'}`}>
-                  ❤️ {project.likes} beğeni
+                <div className={`flex items-center gap-1 text-xs ${isDark ? 'text-slate-500' : 'text-[#A59D84]/70'}`}>
+                  <Heart className="w-3 h-3" />
+                  {project.likes} beğeni
                 </div>
               </motion.div>
             ))}
           </div>
+          )}
         </motion.div>
       </div>
     </div>

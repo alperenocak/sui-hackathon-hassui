@@ -1,9 +1,9 @@
 import { Transaction } from "@mysten/sui/transactions";
 
 // ==================== CONTRACT CONSTANTS ====================
-export const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || "";
-export const DOCUMENT_LIBRARY_ID = import.meta.env.VITE_DOCUMENT_LIBRARY_ID || "";
-export const ACHIEVEMENT_MINTER_ID = import.meta.env.VITE_ACHIEVEMENT_MINTER_ID || "";
+export const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || "0xbfaff760182ed4b267cbf6db6ceaa28012b2adb48a2e2db0c51023efa2f1fda7";
+export const DOCUMENT_LIBRARY_ID = import.meta.env.VITE_DOCUMENT_LIBRARY_ID || "0xd4a75ba83ee878c99fcdbf493e4211316dc6d62492dd23ee7416135fabb1e793";
+export const ACHIEVEMENT_MINTER_ID = import.meta.env.VITE_ACHIEVEMENT_MINTER_ID || "0xf9799f420495793f17e33e3efefef4bae0d511f482e5b5eec8795322048f9496";
 export const CLOCK_ID = "0x6"; // Sui sistem clock objesi
 
 // ==================== DOCUMENT SYSTEM PTBs ====================
