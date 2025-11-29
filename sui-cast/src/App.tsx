@@ -6,9 +6,8 @@ import {
   useSuiClient,
   useSuiClientQuery,
 } from '@mysten/dapp-kit';
-
 import { motion, AnimatePresence } from 'framer-motion';
-import { Chrome, Wallet, Moon, Sun } from 'lucide-react';
+import { Chrome, Wallet, Moon, Sun, Sparkles, Lock, Shield } from 'lucide-react';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import {
   generateNonce,
@@ -17,11 +16,9 @@ import {
 } from '@mysten/sui/zklogin';
 import { jwtDecode } from 'jwt-decode';
 
-
 // ---------- ENV ---------- //
 const GOOGLE_CLIENT_ID = import.meta.env
   .VITE_GOOGLE_CLIENT_ID as string | undefined;
-
 const REDIRECT_URL =
   (import.meta.env.VITE_ZKLOGIN_REDIRECT_URL as string | undefined) ??
   window.location.origin;
@@ -40,7 +37,7 @@ function hashcode(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
     h = (h << 5) - h + s.charCodeAt(i);
-    h |= 0; // 32-bit'e sıkıştır
+    h |= 0;
   }
   return BigInt(h >>> 0).toString();
 }
@@ -54,14 +51,54 @@ function App() {
   return <LoginPage />;
 }
 
+// 🎨 Floating particles component
+function FloatingParticles({ isDark }: { isDark: boolean }) {
+  const particles = Array.from({ length: 20 }, (_, i) => ({
+    id: i,
+    size: Math.random() * 4 + 2,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    duration: Math.random() * 10 + 10,
+    delay: Math.random() * 5,
+  }));
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {particles.map((particle) => (
+        <motion.div
+          key={particle.id}
+          className={`absolute rounded-full ${
+            isDark ? 'bg-[#F25912]' : 'bg-[#A59D84]'
+          }`}
+          style={{
+            width: particle.size,
+            height: particle.size,
+            left: `${particle.x}%`,
+            top: `${particle.y}%`,
+            opacity: 0.2,
+          }}
+          animate={{
+            y: [0, -30, 0],
+            x: [0, Math.random() * 20 - 10, 0],
+            opacity: [0.2, 0.5, 0.2],
+          }}
+          transition={{
+            duration: particle.duration,
+            repeat: Infinity,
+            delay: particle.delay,
+            ease: "easeInOut",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function LoginPage() {
   const suiClient = useSuiClient();
-
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    // Check localStorage first, then system preference
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
     if (savedTheme) return savedTheme;
-
     if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
       return 'dark';
     }
@@ -69,8 +106,6 @@ function LoginPage() {
   });
 
   const [zkLoading, setZkLoading] = useState(false);
-
-  // zkLogin sonucu
   const [zkAddress, setZkAddress] = useState<string | null>(null);
   const [zkUserInfo, setZkUserInfo] = useState<{
     email?: string;
@@ -79,7 +114,6 @@ function LoginPage() {
   } | null>(null);
   const [zkStatus, setZkStatus] = useState<string | null>(null);
 
-  // Apply dark class and save to localStorage
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'dark') {
@@ -96,16 +130,13 @@ function LoginPage() {
   useEffect(() => {
     const url = new URL(window.location.href);
     const idToken = url.searchParams.get('id_token');
-
     if (!idToken) return;
 
-    // URL'i temizle (id_token vs. görünsün istemiyoruz)
     url.searchParams.delete('id_token');
     url.searchParams.delete('authuser');
     url.searchParams.delete('prompt');
     window.history.replaceState({}, '', url.toString());
 
-    // JWT decode
     let decoded: JwtPayload;
     try {
       decoded = jwtDecode<JwtPayload>(idToken);
@@ -115,10 +146,8 @@ function LoginPage() {
       return;
     }
 
-    // Salt + zkLogin adres hesapla
     const salt = getSaltFromJwt(decoded);
     const address = jwtToAddress(idToken, salt);
-
     setZkAddress(address);
     setZkUserInfo({
       email: decoded.email,
@@ -128,7 +157,7 @@ function LoginPage() {
     setZkStatus('zkLogin oturumu aktif. Bu adresle Sui üzerinde işlem yapabilirsin.');
   }, []);
 
-  // 🔐 zkLogin butonu – Google'a yönlendirme + ephemeral kayıt
+  // 🔐 zkLogin butonu
   const handleZkLoginClick = async () => {
     if (!GOOGLE_CLIENT_ID) {
       alert(
@@ -139,33 +168,25 @@ function LoginPage() {
 
     try {
       setZkLoading(true);
-
-      // 1) Sui sistem durumunu al (epoch bilgisi)
       const { epoch } = await suiClient.getLatestSuiSystemState();
-      const maxEpoch = Number(epoch) + 2; // Ephemeral key 2 epoch boyunca geçerli olsun
-
-      // 2) Ephemeral key pair üret
+      const maxEpoch = Number(epoch) + 2;
       const ephemeralKeyPair = new Ed25519Keypair();
-
-      // 3) Randomness & nonce üret
-      const randomness = generateRandomness(); // BigInt
+      const randomness = generateRandomness();
       const nonce = generateNonce(
         ephemeralKeyPair.getPublicKey(),
         maxEpoch,
         randomness,
       );
 
-      // 4) Sonradan kullanmak için gerekli verileri sessionStorage'a yaz
       sessionStorage.setItem(
         'zklogin_ephemeral_data',
         JSON.stringify({
           maxEpoch,
-          randomness: randomness.toString(), // BigInt -> string
-          ephemeralSecretKey: ephemeralKeyPair.getSecretKey(), // bech32 secret key (suiprivkey...)
+          randomness: randomness.toString(),
+          ephemeralSecretKey: ephemeralKeyPair.getSecretKey(),
         }),
       );
 
-      // 5) Google OAuth URL'ini hazırla
       const params = new URLSearchParams({
         client_id: GOOGLE_CLIENT_ID,
         redirect_uri: REDIRECT_URL,
@@ -173,10 +194,7 @@ function LoginPage() {
         scope: 'openid email profile',
         nonce,
       });
-
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-
-      // 6) Kullanıcıyı Google'a yönlendir
       window.location.href = authUrl;
     } catch (err) {
       console.error('zkLogin başlatılırken hata:', err);
@@ -188,17 +206,18 @@ function LoginPage() {
   return (
     <div
       className={`min-h-screen w-full font-sans transition-colors duration-300 flex flex-col relative overflow-hidden ${
-        isDark ? 'text-slate-50' : 'bg-[#F5F1DC] text-slate-900'
+        isDark ? 'text-slate-50' : 'text-slate-900'
       }`}
-      style={isDark ? { backgroundColor: '#211832' } : undefined}
+      style={isDark ? { backgroundColor: '#211832' } : { backgroundColor: '#ECEBDE' }}
     >
-      {/* Animated gradient background blobs */}
+      {/* Animated gradient background blobs with rotation */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div
           animate={{
             x: [0, 100, 0],
             y: [0, -100, 0],
             scale: [1, 1.2, 1],
+            rotate: [0, 90, 0],
           }}
           transition={{
             duration: 20,
@@ -206,14 +225,12 @@ function LoginPage() {
             ease: "easeInOut"
           }}
           className={`absolute top-0 -left-20 w-96 h-96 rounded-full blur-3xl ${
-            isDark 
-              ? 'opacity-25'
-              : 'opacity-40'
+            isDark ? 'opacity-25' : 'opacity-30'
           }`}
           style={isDark ? {
             background: 'radial-gradient(circle, #5C3E94, #F25912)'
           } : {
-            background: 'radial-gradient(circle, #0046FF, #73C8D2)'
+            background: 'radial-gradient(circle, #A59D84, #C1BAA1)'
           }}
         />
         <motion.div
@@ -221,6 +238,7 @@ function LoginPage() {
             x: [0, -100, 0],
             y: [0, 100, 0],
             scale: [1, 1.1, 1],
+            rotate: [0, -90, 0],
           }}
           transition={{
             duration: 15,
@@ -228,14 +246,12 @@ function LoginPage() {
             ease: "easeInOut"
           }}
           className={`absolute bottom-0 -right-20 w-96 h-96 rounded-full blur-3xl ${
-            isDark
-              ? 'opacity-20'
-              : 'opacity-35'
+            isDark ? 'opacity-20' : 'opacity-25'
           }`}
           style={isDark ? {
             background: 'radial-gradient(circle, #412B6B, #F25912)'
           } : {
-            background: 'radial-gradient(circle, #FF9013, #73C8D2)'
+            background: 'radial-gradient(circle, #C1BAA1, #D7D3BF)'
           }}
         />
         <motion.div
@@ -243,6 +259,7 @@ function LoginPage() {
             x: [0, 50, 0],
             y: [0, 50, 0],
             scale: [1, 1.3, 1],
+            rotate: [0, 180, 0],
           }}
           transition={{
             duration: 18,
@@ -250,36 +267,46 @@ function LoginPage() {
             ease: "easeInOut"
           }}
           className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl ${
-            isDark
-              ? 'opacity-15'
-              : 'opacity-30'
+            isDark ? 'opacity-15' : 'opacity-20'
           }`}
           style={isDark ? {
             background: 'radial-gradient(circle, #5C3E94, #412B6B)'
           } : {
-            background: 'radial-gradient(circle, #0046FF, #FF9013)'
+            background: 'radial-gradient(circle, #A59D84, #D7D3BF)'
           }}
         />
       </div>
 
-      {/* Toggle theme switcher */}
+      {/* 🎨 Floating particles */}
+      <FloatingParticles isDark={isDark} />
+
+      {/* 🔲 Grid pattern overlay */}
+      <div 
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: `radial-gradient(circle, ${isDark ? 'rgba(92, 62, 148, 0.1)' : 'rgba(165, 157, 132, 0.15)'} 1px, transparent 1px)`,
+          backgroundSize: '50px 50px',
+          opacity: 0.3,
+        }}
+      />
+
+      {/* 🌓 Toggle theme switcher */}
       <div className="flex justify-end p-4 relative z-10">
         <motion.button
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => setTheme(isDark ? 'light' : 'dark')}
           className={`relative w-16 h-8 rounded-full p-1 transition-colors duration-300 backdrop-blur-sm border ${
-            isDark 
-              ? 'border-[#5C3E94]/40' 
-              : 'border-[#73C8D2]/40'
+            isDark ? 'border-[#5C3E94]/40' : 'border-[#A59D84]/40'
           }`}
           style={isDark 
             ? { backgroundColor: '#412B6B' } 
-            : { backgroundColor: 'rgba(255, 255, 255, 0.9)' }
+            : { backgroundColor: '#D7D3BF' }
           }
           aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {/* Toggle circle with icon */}
           <motion.div
             layout
             transition={{
@@ -292,7 +319,7 @@ function LoginPage() {
             }`}
             style={isDark 
               ? { backgroundColor: '#5C3E94' } 
-              : { background: 'linear-gradient(135deg, #0046FF 0%, #73C8D2 100%)' }
+              : { background: 'linear-gradient(135deg, #A59D84 0%, #C1BAA1 100%)' }
             }
           >
             <AnimatePresence mode="wait">
@@ -319,11 +346,9 @@ function LoginPage() {
               )}
             </AnimatePresence>
           </motion.div>
-
-          {/* Background icons */}
           <div className="flex items-center justify-between h-full px-1.5">
-            <Sun className={`w-3 h-3 transition-opacity ${isDark ? 'opacity-30' : 'opacity-50'}`} style={isDark ? { color: '#F25912' } : { color: '#0046FF' }} />
-            <Moon className={`w-3 h-3 transition-opacity ${isDark ? 'opacity-50' : 'opacity-30'}`} style={isDark ? { color: '#F25912' } : { color: '#0046FF' }} />
+            <Sun className={`w-3 h-3 transition-opacity ${isDark ? 'opacity-30' : 'opacity-50'}`} style={isDark ? { color: '#F25912' } : { color: '#A59D84' }} />
+            <Moon className={`w-3 h-3 transition-opacity ${isDark ? 'opacity-50' : 'opacity-30'}`} style={isDark ? { color: '#F25912' } : { color: '#A59D84' }} />
           </div>
         </motion.button>
       </div>
@@ -331,75 +356,161 @@ function LoginPage() {
       {/* Centered content with header */}
       <div className="flex-1 flex items-center justify-center p-6 relative z-10">
         <div className="w-full max-w-md space-y-6">
-          {/* Header text */}
+          {/* 💫 Header text with floating icons */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="text-center space-y-2"
+            className="text-center space-y-3 relative"
           >
-            <h1 
-              className={`text-4xl font-bold tracking-tight ${
-                !isDark ? 'text-[#0046FF]' : ''
-              }`}
+            {/* Floating Sparkles icon */}
+            <motion.div
+              animate={{
+                y: [0, -10, 0],
+                rotate: [0, 10, 0],
+              }}
+              transition={{
+                duration: 3,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              className="absolute -left-8 top-0"
+            >
+              <Sparkles className={`w-6 h-6 ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`} />
+            </motion.div>
+
+            {/* Floating Shield icon */}
+            <motion.div
+              animate={{
+                y: [0, -10, 0],
+                rotate: [0, -10, 0],
+              }}
+              transition={{
+                duration: 3,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 0.5,
+              }}
+              className="absolute -right-8 top-0"
+            >
+              <Shield className={`w-6 h-6 ${isDark ? 'text-[#5C3E94]' : 'text-[#C1BAA1]'}`} />
+            </motion.div>
+
+            <motion.h1 
+              className="text-4xl font-bold tracking-tight"
               style={isDark ? {
                 background: 'linear-gradient(135deg, #F25912 0%, #5C3E94 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text'
-              } : undefined}
+              } : {
+                background: 'linear-gradient(135deg, #A59D84 0%, #C1BAA1 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text'
+              }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 300 }}
             >
               42 Pedagogy dApp
-            </h1>
-            <p className={`text-lg ${isDark ? 'text-slate-300' : 'text-slate-700 font-medium'}`}>
+            </motion.h1>
+            <p className={`text-lg ${isDark ? 'text-slate-300' : 'text-[#A59D84] font-medium'}`}>
               Simple and secure sign-in on Sui.
             </p>
+
+            {/* 🔒 Security badge */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.3 }}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm ${
+                isDark 
+                  ? 'bg-[#5C3E94]/20 text-[#F25912] border border-[#5C3E94]/30' 
+                  : 'bg-[#A59D84]/20 text-[#A59D84] border border-[#A59D84]/30'
+              }`}
+            >
+              <Lock className="w-3 h-3" />
+              <span>Secured by zkLogin & Sui Network</span>
+            </motion.div>
           </motion.div>
 
-          {/* Login card */}
+          {/* ✨ Login card with hover effects */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.2 }}
-            className={`w-full rounded-2xl p-6 shadow-2xl space-y-5 border backdrop-blur-sm ${
-              !isDark
-                ? 'bg-white/90 border-[#73C8D2]/30 shadow-xl'
-                : 'border-[#5C3E94]/30'
+            whileHover={{ 
+              y: -5,
+              boxShadow: isDark 
+                ? '0 30px 40px -10px rgba(92, 62, 148, 0.4), 0 15px 15px -5px rgba(242, 89, 18, 0.2)'
+                : '0 30px 40px -10px rgba(165, 157, 132, 0.3), 0 15px 15px -5px rgba(193, 186, 161, 0.2)'
+            }}
+            className={`w-full rounded-2xl p-6 shadow-2xl space-y-5 border backdrop-blur-sm relative overflow-hidden ${
+              !isDark ? 'border-[#C1BAA1]/40' : 'border-[#5C3E94]/30'
             }`}
             style={isDark ? {
               backgroundColor: '#412B6Bcc',
               boxShadow: '0 20px 25px -5px rgba(92, 62, 148, 0.3), 0 10px 10px -5px rgba(242, 89, 18, 0.1)'
             } : {
-              boxShadow: '0 20px 25px -5px rgba(0, 70, 255, 0.1), 0 10px 10px -5px rgba(115, 200, 210, 0.08)'
+              backgroundColor: '#ECEBDE',
+              boxShadow: '0 20px 25px -5px rgba(165, 157, 132, 0.2), 0 10px 10px -5px rgba(193, 186, 161, 0.15)'
             }}
           >
+            {/* Animated border glow */}
+            <motion.div
+              className="absolute inset-0 rounded-2xl"
+              animate={{
+                background: isDark 
+                  ? [
+                      'radial-gradient(600px circle at var(--mouse-x, 0px) var(--mouse-y, 0px), rgba(242, 89, 18, 0.1), transparent 40%)',
+                      'radial-gradient(600px circle at var(--mouse-x, 0px) var(--mouse-y, 0px), rgba(92, 62, 148, 0.1), transparent 40%)',
+                    ]
+                  : [
+                      'radial-gradient(600px circle at var(--mouse-x, 0px) var(--mouse-y, 0px), rgba(165, 157, 132, 0.08), transparent 40%)',
+                      'radial-gradient(600px circle at var(--mouse-x, 0px) var(--mouse-y, 0px), rgba(193, 186, 161, 0.08), transparent 40%)',
+                    ]
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                repeatType: "reverse"
+              }}
+              style={{ pointerEvents: 'none' }}
+            />
+
             {/* Title */}
-            <div className="text-center space-y-1">
+            <div className="text-center space-y-1 relative z-10">
               <h2 className="text-2xl font-semibold">Sign in</h2>
-              <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+              <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-[#A59D84]'}`}>
                 Choose a sign-in method below.
               </p>
             </div>
 
             {/* Buttons */}
-            <div className="space-y-4">
-              {/* zkLogin (Google) */}
-              <button
+            <div className="space-y-4 relative z-10">
+              {/* 🌈 zkLogin button with shine effect */}
+              <motion.button
                 onClick={handleZkLoginClick}
                 disabled={zkLoading}
-                className={`w-full inline-flex items-center justify-center gap-3 rounded-xl py-3 px-4 text-sm font-medium transition-all disabled:opacity-70 disabled:cursor-not-allowed ${
-                  isDark
-                    ? 'text-white hover:opacity-90 active:scale-95 shadow-lg'
-                    : 'text-white hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] shadow-lg'
-                }`}
+                whileHover={{ scale: zkLoading ? 1 : 1.02 }}
+                whileTap={{ scale: zkLoading ? 1 : 0.98 }}
+                className="w-full inline-flex items-center justify-center gap-3 rounded-xl py-3 px-4 text-sm font-medium transition-all disabled:opacity-70 disabled:cursor-not-allowed relative overflow-hidden group text-white shadow-lg"
                 style={isDark ? {
                   background: 'linear-gradient(135deg, #F25912 0%, #5C3E94 100%)',
                   boxShadow: '0 10px 15px -3px rgba(242, 89, 18, 0.4)'
                 } : {
-                  background: 'linear-gradient(135deg, #0046FF 0%, #73C8D2 100%)',
-                  boxShadow: '0 10px 15px -3px rgba(0, 70, 255, 0.3)'
+                  background: 'linear-gradient(135deg, #A59D84 0%, #C1BAA1 100%)',
+                  boxShadow: '0 10px 15px -3px rgba(165, 157, 132, 0.4)'
                 }}
               >
+                {/* Shine effect on hover */}
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                  initial={{ x: '-100%' }}
+                  whileHover={{ x: '100%' }}
+                  transition={{ duration: 0.6 }}
+                />
+
                 <AnimatePresence mode="wait">
                   {zkLoading ? (
                     <motion.span
@@ -420,47 +531,50 @@ function LoginPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-                <span>Continue with Google (zkLogin)</span>
-              </button>
+                <span className="relative z-10">Continue with Google (zkLogin)</span>
+              </motion.button>
 
               {/* Divider */}
-              <div className={`flex items-center gap-3 text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+              <div className={`flex items-center gap-3 text-[11px] ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`}>
                 <div 
                   className="flex-1 h-px"
-                  style={isDark ? { backgroundColor: '#5C3E9460' } : { backgroundColor: 'rgba(115, 200, 210, 0.4)' }}
+                  style={isDark ? { backgroundColor: '#5C3E9460' } : { backgroundColor: '#C1BAA160' }}
                 />
                 <span>or</span>
                 <div 
                   className="flex-1 h-px"
-                  style={isDark ? { backgroundColor: '#5C3E9460' } : { backgroundColor: 'rgba(115, 200, 210, 0.4)' }}
+                  style={isDark ? { backgroundColor: '#5C3E9460' } : { backgroundColor: '#C1BAA160' }}
                 />
               </div>
 
-              {/* Normal wallet */}
-              <div
+              {/* 🎯 Wallet connect with micro-interaction */}
+              <motion.div
+                whileHover={{ scale: 1.01 }}
                 className={`w-full flex flex-col gap-2 rounded-xl p-3 border transition-colors ${
-                  !isDark
-                    ? 'bg-[#73C8D2]/10 border-[#73C8D2]/30'
-                    : 'border-[#5C3E94]/40'
+                  !isDark ? 'border-[#C1BAA1]/40' : 'border-[#5C3E94]/40'
                 }`}
-                style={isDark ? { backgroundColor: '#211832' } : undefined}
+                style={isDark ? { backgroundColor: '#211832' } : { backgroundColor: '#D7D3BF' }}
               >
-                <div className={`flex items-center justify-between text-xs ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                <div className={`flex items-center justify-between text-xs ${isDark ? 'text-slate-300' : 'text-[#A59D84]'}`}>
                   <span className="flex items-center gap-1">
                     <Wallet className="w-3 h-3" />
                     Wallet connect
                   </span>
-                  <span className={`uppercase tracking-wide text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                  <span className={`uppercase tracking-wide text-[10px] ${isDark ? 'text-slate-400' : 'text-[#A59D84]/70'}`}>
                     dApp Kit
                   </span>
                 </div>
                 <ConnectButton />
-              </div>
+              </motion.div>
             </div>
 
             {/* zkLogin session info */}
             {zkAddress && (
-              <div className="mt-4 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-3">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mt-4 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-3 relative z-10"
+              >
                 <p className="text-xs font-medium text-emerald-300">
                   zkLogin session
                 </p>
@@ -494,11 +608,14 @@ function LoginPage() {
                     {zkStatus}
                   </p>
                 )}
-              </div>
+              </motion.div>
             )}
 
-            {/* Connected address + objects (normal wallet) */}
-            <div className="pt-4 border-t border-slate-800/60 space-y-3">
+            {/* Connected address + objects */}
+            <div 
+              className="pt-4 border-t space-y-3 relative z-10"
+              style={isDark ? { borderColor: '#5C3E9440' } : { borderColor: '#C1BAA140' }}
+            >
               <ConnectedAccountSection isDark={isDark} />
             </div>
           </motion.div>
@@ -513,7 +630,9 @@ function ConnectedAccountSection({ isDark }: { isDark: boolean }) {
 
   if (!account) {
     return (
-      <p className="text-xs text-slate-500">No wallet connected yet.</p>
+      <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-[#A59D84]'}`}>
+        No wallet connected yet.
+      </p>
     );
   }
 
@@ -524,17 +643,19 @@ function ConnectedAccountSection({ isDark }: { isDark: boolean }) {
       className="space-y-3 text-xs"
     >
       <div>
-        <p className={isDark ? 'text-slate-300 mb-1' : 'text-slate-400 mb-1'}>Connected address</p>
-        <div
+        <p className={isDark ? 'text-slate-300 mb-1' : 'text-[#A59D84] mb-1'}>Connected address</p>
+        <motion.div
+          whileHover={{ scale: 1.01 }}
           className={`font-mono break-all rounded-md px-2 py-1 text-[11px] ${
-            !isDark
-              ? 'bg-slate-100 text-slate-900 border border-slate-200'
-              : 'text-slate-100'
+            !isDark ? 'text-slate-900 border' : 'text-slate-100'
           }`}
-          style={isDark ? { backgroundColor: '#211832' } : undefined}
+          style={isDark 
+            ? { backgroundColor: '#211832' } 
+            : { backgroundColor: '#D7D3BF', borderColor: '#C1BAA1' }
+          }
         >
           {account.address}
-        </div>
+        </motion.div>
       </div>
 
       <OwnedObjects address={account.address} isDark={isDark} />
@@ -557,11 +678,11 @@ function OwnedObjects({ address, isDark }: OwnedObjectsProps) {
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="flex items-center gap-2 text-slate-500 text-[11px]"
+        className={`flex items-center gap-2 text-[11px] ${isDark ? 'text-slate-500' : 'text-[#A59D84]'}`}
       >
         <span 
           className="h-3 w-3 border-2 border-t-transparent rounded-full animate-spin"
-          style={isDark ? { borderColor: '#F25912' } : { borderColor: 'rgb(100 116 139)' }}
+          style={isDark ? { borderColor: '#F25912' } : { borderColor: '#A59D84' }}
         />
         Loading objects…
       </motion.div>
@@ -584,7 +705,7 @@ function OwnedObjects({ address, isDark }: OwnedObjectsProps) {
 
   if (!objects.length) {
     return (
-      <p className="text-[11px] text-slate-500">
+      <p className={`text-[11px] ${isDark ? 'text-slate-500' : 'text-[#A59D84]'}`}>
         No objects found for this address.
       </p>
     );
@@ -592,7 +713,7 @@ function OwnedObjects({ address, isDark }: OwnedObjectsProps) {
 
   return (
     <div className="space-y-1">
-      <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-400'}`}>
+      <p className={`text-[11px] ${isDark ? 'text-slate-300' : 'text-[#A59D84]'}`}>
         Owned objects ({objects.length})
       </p>
       <ul className="max-h-24 overflow-auto space-y-1 scrollbar-thin">
@@ -601,13 +722,15 @@ function OwnedObjects({ address, isDark }: OwnedObjectsProps) {
             key={obj.data?.objectId ?? obj.objectId ?? index}
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
+            whileHover={{ scale: 1.02, x: 5 }}
             transition={{ delay: index * 0.05 }}
-            className={`font-mono text-[11px] break-all rounded px-2 py-1 ${
-              !isDark
-                ? 'bg-slate-100 text-slate-900 border border-slate-200'
-                : 'text-slate-100'
+            className={`font-mono text-[11px] break-all rounded px-2 py-1 cursor-default ${
+              !isDark ? 'text-slate-900 border' : 'text-slate-100'
             }`}
-            style={isDark ? { backgroundColor: '#211832' } : undefined}
+            style={isDark 
+              ? { backgroundColor: '#211832' } 
+              : { backgroundColor: '#D7D3BF', borderColor: '#C1BAA1' }
+            }
           >
             {obj.data?.objectId ?? obj.objectId}
           </motion.li>
