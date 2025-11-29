@@ -3,16 +3,60 @@ import { useEffect, useState } from 'react';
 import {
   ConnectButton,
   useCurrentAccount,
+  useSuiClient,
   useSuiClientQuery,
 } from '@mysten/dapp-kit';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { Chrome, Wallet, Moon, Sun } from 'lucide-react';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import {
+  generateNonce,
+  generateRandomness,
+  jwtToAddress,
+} from '@mysten/sui/zklogin';
+import { jwtDecode } from 'jwt-decode';
+
+
+// ---------- ENV ---------- //
+const GOOGLE_CLIENT_ID = import.meta.env
+  .VITE_GOOGLE_CLIENT_ID as string | undefined;
+
+const REDIRECT_URL =
+  (import.meta.env.VITE_ZKLOGIN_REDIRECT_URL as string | undefined) ??
+  window.location.origin;
+
+// ---------- JWT payload tipi ---------- //
+type JwtPayload = {
+  email?: string;
+  sub?: string;
+  name?: string;
+  picture?: string;
+  aud?: string | string[];
+};
+
+// ---------- Salt helper'ları ---------- //
+function hashcode(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h << 5) - h + s.charCodeAt(i);
+    h |= 0; // 32-bit'e sıkıştır
+  }
+  return BigInt(h >>> 0).toString();
+}
+
+function getSaltFromJwt(payload: JwtPayload): string {
+  const base = payload.email ?? payload.sub ?? 'default-user';
+  return hashcode(base);
+}
 
 function App() {
   return <LoginPage />;
 }
 
 function LoginPage() {
+  const suiClient = useSuiClient();
+
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     // Check localStorage first, then system preference
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
@@ -26,6 +70,15 @@ function LoginPage() {
 
   const [zkLoading, setZkLoading] = useState(false);
 
+  // zkLogin sonucu
+  const [zkAddress, setZkAddress] = useState<string | null>(null);
+  const [zkUserInfo, setZkUserInfo] = useState<{
+    email?: string;
+    name?: string;
+    picture?: string;
+  } | null>(null);
+  const [zkStatus, setZkStatus] = useState<string | null>(null);
+
   // Apply dark class and save to localStorage
   useEffect(() => {
     const root = document.documentElement;
@@ -37,16 +90,100 @@ function LoginPage() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const handleZkLoginClick = () => {
-    setZkLoading(true);
-    setTimeout(() => {
-      console.log('zkLogin button clicked – plug your real flow here.');
-      setZkLoading(false);
-      alert('zkLogin integration is not wired yet. This is a placeholder for your real flow.');
-    }, 1200);
-  };
-
   const isDark = theme === 'dark';
+
+  // 🔁 Google'dan dönüşte URL'deki id_token'ı yakala
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const idToken = url.searchParams.get('id_token');
+
+    if (!idToken) return;
+
+    // URL'i temizle (id_token vs. görünsün istemiyoruz)
+    url.searchParams.delete('id_token');
+    url.searchParams.delete('authuser');
+    url.searchParams.delete('prompt');
+    window.history.replaceState({}, '', url.toString());
+
+    // JWT decode
+    let decoded: JwtPayload;
+    try {
+      decoded = jwtDecode<JwtPayload>(idToken);
+    } catch (e) {
+      console.error('JWT decode hatası:', e);
+      setZkStatus('JWT çözümlenemedi.');
+      return;
+    }
+
+    // Salt + zkLogin adres hesapla
+    const salt = getSaltFromJwt(decoded);
+    const address = jwtToAddress(idToken, salt);
+
+    setZkAddress(address);
+    setZkUserInfo({
+      email: decoded.email,
+      name: decoded.name,
+      picture: decoded.picture,
+    });
+    setZkStatus('zkLogin oturumu aktif. Bu adresle Sui üzerinde işlem yapabilirsin.');
+  }, []);
+
+  // 🔐 zkLogin butonu – Google'a yönlendirme + ephemeral kayıt
+  const handleZkLoginClick = async () => {
+    if (!GOOGLE_CLIENT_ID) {
+      alert(
+        'VITE_GOOGLE_CLIENT_ID tanımlı değil. Lütfen .env dosyasını kontrol et.',
+      );
+      return;
+    }
+
+    try {
+      setZkLoading(true);
+
+      // 1) Sui sistem durumunu al (epoch bilgisi)
+      const { epoch } = await suiClient.getLatestSuiSystemState();
+      const maxEpoch = Number(epoch) + 2; // Ephemeral key 2 epoch boyunca geçerli olsun
+
+      // 2) Ephemeral key pair üret
+      const ephemeralKeyPair = new Ed25519Keypair();
+
+      // 3) Randomness & nonce üret
+      const randomness = generateRandomness(); // BigInt
+      const nonce = generateNonce(
+        ephemeralKeyPair.getPublicKey(),
+        maxEpoch,
+        randomness,
+      );
+
+      // 4) Sonradan kullanmak için gerekli verileri sessionStorage'a yaz
+      sessionStorage.setItem(
+        'zklogin_ephemeral_data',
+        JSON.stringify({
+          maxEpoch,
+          randomness: randomness.toString(), // BigInt -> string
+          ephemeralSecretKey: ephemeralKeyPair.getSecretKey(), // bech32 secret key (suiprivkey...)
+        }),
+      );
+
+      // 5) Google OAuth URL'ini hazırla
+      const params = new URLSearchParams({
+        client_id: GOOGLE_CLIENT_ID,
+        redirect_uri: REDIRECT_URL,
+        response_type: 'id_token',
+        scope: 'openid email profile',
+        nonce,
+      });
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+
+      // 6) Kullanıcıyı Google'a yönlendir
+      window.location.href = authUrl;
+    } catch (err) {
+      console.error('zkLogin başlatılırken hata:', err);
+      alert('zkLogin başlatılırken bir hata oluştu. Konsolu kontrol et.');
+      setZkLoading(false);
+    }
+  };
 
   return (
     <div
@@ -321,11 +458,47 @@ function LoginPage() {
               </div>
             </div>
 
-            {/* Connected address + objects */}
-            <div 
-              className="pt-4 border-t space-y-3"
-              style={isDark ? { borderColor: '#5C3E9440' } : { borderColor: 'rgba(115, 200, 210, 0.2)' }}
-            >
+            {/* zkLogin session info */}
+            {zkAddress && (
+              <div className="mt-4 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-3">
+                <p className="text-xs font-medium text-emerald-300">
+                  zkLogin session
+                </p>
+                {zkUserInfo && (
+                  <div className="flex items-center gap-3">
+                    {zkUserInfo.picture && (
+                      <img
+                        src={zkUserInfo.picture}
+                        className="h-8 w-8 rounded-full border border-slate-700 object-cover"
+                        alt={zkUserInfo.name ?? zkUserInfo.email ?? 'User'}
+                      />
+                    )}
+                    <div className="text-xs">
+                      <p className="text-slate-100">
+                        {zkUserInfo.name ?? 'Signed in user'}
+                      </p>
+                      {zkUserInfo.email && (
+                        <p className="text-slate-400">{zkUserInfo.email}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="text-[11px] mt-2">
+                  <p className="text-slate-400 mb-1">Sui zkLogin address</p>
+                  <p className="font-mono break-all text-emerald-300">
+                    {zkAddress}
+                  </p>
+                </div>
+                {zkStatus && (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {zkStatus}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Connected address + objects (normal wallet) */}
+            <div className="pt-4 border-t border-slate-800/60 space-y-3">
               <ConnectedAccountSection isDark={isDark} />
             </div>
           </motion.div>
@@ -340,9 +513,7 @@ function ConnectedAccountSection({ isDark }: { isDark: boolean }) {
 
   if (!account) {
     return (
-      <p className="text-xs text-slate-500">
-        No wallet connected yet.
-      </p>
+      <p className="text-xs text-slate-500">No wallet connected yet.</p>
     );
   }
 
