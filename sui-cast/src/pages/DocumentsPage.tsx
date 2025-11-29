@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Upload, FileText, Heart, Trophy, Medal, Award, Moon, Sun, User, X, ExternalLink, Loader2 } from 'lucide-react';
-import { useCurrentAccount } from '@mysten/dapp-kit';
+import { Search, Upload, FileText, Heart, Trophy, Medal, Award, Moon, Sun, User, X, ExternalLink, Loader2, LogOut } from 'lucide-react';
+import { useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
 import {
   useCreateStudentProfile,
   useUploadDocument,
@@ -94,6 +95,27 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
     refetchDocuments();
   }, [address]);
 
+  const navigate = useNavigate();
+  const { mutate: disconnectWallet } = useDisconnectWallet();
+
+  // Çıkış yap
+  const handleLogout = () => {
+    // Wallet bağlıysa disconnect yap
+    if (walletAddress) {
+      disconnectWallet();
+    }
+    // zkLogin verilerini temizle
+    sessionStorage.removeItem('zklogin_address');
+    sessionStorage.removeItem('zklogin_user_info');
+    sessionStorage.removeItem('zklogin_ephemeral_data');
+    sessionStorage.removeItem('sui_jwt_token');
+    // State'leri temizle
+    setZkLoginAddress(null);
+    setZkLoginUserInfo(null);
+    // Ana sayfaya yönlendir
+    navigate('/');
+  };
+
   // Profil oluştur
   const handleCreateProfile = async () => {
     try {
@@ -165,6 +187,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
       blobId: 'blob012', 
       description: 'Raycasting tekniği kullanılarak yapılmış 3D labirent oyunu.' 
     },
+    
   ];
 
   // Blockchain dökümanlarını UI formatına dönüştür
@@ -408,7 +431,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
             <span className="text-base">Upload</span>
           </motion.button>
 
-          {/* Theme Switcher + 42 Logo - Vertical Stack */}
+          {/* Theme Switcher + Logout Button */}
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -476,19 +499,21 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
             {/* Vertical Divider */}
             <div className={`w-px h-10 ${isDark ? 'bg-[#5C3E94]/30' : 'bg-[#A59D84]/30'}`} />
 
-            {/* 42 Logo */}
-            <motion.div
+            {/* Logout Button */}
+            <motion.button
               whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={handleLogout}
               transition={{ type: "spring", stiffness: 200 }}
-              className="w-10 h-10 flex items-center justify-center cursor-pointer"
+              className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
+                isDark 
+                  ? 'hover:bg-[#F25912]/20' 
+                  : 'hover:bg-[#A59D84]/20'
+              }`}
+              title="Çıkış Yap"
             >
-              <img 
-                src="/src/assets/42-logo.svg" 
-                alt="42 School Logo" 
-                className="w-8 h-8 object-contain"
-                style={{ filter: isDark ? 'brightness(0) invert(1)' : 'none' }}
-              />
-            </motion.div>
+              <LogOut className={`w-5 h-5 ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`} />
+            </motion.button>
           </motion.div>
 
           {/* Profile Button */}
@@ -497,6 +522,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
             animate={{ scale: 1 }}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
+            onClick={() => navigate('/profile')}
             transition={{ type: "spring", stiffness: 200 }}
             className={`h-16 w-16 rounded-full overflow-hidden border-2 ${
               isDark ? 'border-[#5C3E94]' : 'border-[#A59D84]'
