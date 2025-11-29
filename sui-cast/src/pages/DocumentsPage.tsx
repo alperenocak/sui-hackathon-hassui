@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Upload, FileText, Heart, Trophy, Medal, Award, Moon, Sun, User, X, ExternalLink, Loader2, LogOut, CloudUpload, CheckCircle, AlertCircle } from 'lucide-react';
+import { Search, Upload, FileText, Heart, Trophy, Medal, Award, Moon, Sun, User, X, ExternalLink, Loader2, LogOut, CloudUpload, CheckCircle, AlertCircle, Radio, Wifi, WifiOff } from 'lucide-react';
 import { useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
 import {
   useCreateStudentProfile,
@@ -11,6 +11,12 @@ import {
   useLibraryStats,
   useDocuments,
 } from '../lib/hooks';
+import {
+  useDocumentEventStream,
+  isSurfluxConfigured,
+  type DocumentUploadedEvent,
+  type DocumentVotedEvent,
+} from '../lib/surflux';
 
 interface Document {
   id: string;
@@ -47,6 +53,10 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportBlobId, setReportBlobId] = useState("");
   const [reportTargetId, setReportTargetId] = useState("");
+  
+  // Surflux Real-time Stream State
+  const [realtimeEnabled, setRealtimeEnabled] = useState(true);
+  const [newDocNotification, setNewDocNotification] = useState<string | null>(null);
 
   
   // Walrus upload state
@@ -97,6 +107,39 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
   const { stats, refetch: refetchStats } = useLibraryStats();
   const { documents: blockchainDocs, loading: docsLoading, refetch: refetchDocuments } = useDocuments();
   
+  // ==================== SURFLUX REAL-TIME STREAM ====================
+  
+  // Yeni doküman yüklendiğinde çağrılır
+  const handleDocumentUploaded = useCallback((event: DocumentUploadedEvent) => {
+    console.log('[Surflux] Real-time: New document uploaded!', event.title);
+    
+    // Notification göster
+    setNewDocNotification(`📄 Yeni doküman: "${event.title}"`);
+    
+    // 5 saniye sonra notification'ı kapat
+    setTimeout(() => setNewDocNotification(null), 5000);
+    
+    // Doküman listesini yenile
+    refetchDocuments();
+  }, [refetchDocuments]);
+
+  // Doküman oy aldığında çağrılır
+  const handleDocumentVoted = useCallback((event: DocumentVotedEvent) => {
+    console.log('[Surflux] Real-time: Document voted!', event.document_id, 'votes:', event.new_vote_count);
+    
+    // Doküman listesini yenile (yeni vote count için)
+    refetchDocuments();
+  }, [refetchDocuments]);
+
+  // Surflux real-time stream hook
+  const { 
+    status: streamStatus, 
+    isConnected: isStreamConnected,
+  } = useDocumentEventStream({
+    onDocumentUploaded: handleDocumentUploaded,
+    onDocumentVoted: handleDocumentVoted,
+    enabled: realtimeEnabled && isSurfluxConfigured(),
+  });
 
   // İlk yüklemede verileri çek
   useEffect(() => {
@@ -575,6 +618,34 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
             />
           </motion.div>
 
+          {/* Surflux Real-time Stream Status Indicator */}
+          {isSurfluxConfigured() && (
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className={`h-16 flex items-center gap-2 px-4 rounded-2xl border-2 cursor-pointer ${
+                isDark 
+                  ? 'border-[#5C3E94] bg-[#412B6B]' 
+                  : 'border-[#A59D84] bg-[#D7D3BF]'
+              }`}
+              onClick={() => setRealtimeEnabled(!realtimeEnabled)}
+              title={isStreamConnected ? 'Real-time aktif (kapatmak için tıkla)' : 'Real-time kapalı (açmak için tıkla)'}
+            >
+              {isStreamConnected ? (
+                <Wifi className="w-5 h-5 text-green-500 animate-pulse" />
+              ) : streamStatus === 'connecting' ? (
+                <Loader2 className="w-5 h-5 text-yellow-500 animate-spin" />
+              ) : (
+                <WifiOff className={`w-5 h-5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+              )}
+              <span className={`text-xs font-medium hidden sm:block ${
+                isDark ? 'text-slate-300' : 'text-slate-700'
+              }`}>
+                {isStreamConnected ? 'Live' : streamStatus === 'connecting' ? 'Bağlanıyor...' : 'Offline'}
+              </span>
+            </motion.div>
+          )}
+
           {/* Upload Button */}
           <motion.button
             initial={{ scale: 0 }}
@@ -707,6 +778,30 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
           </motion.button>
         </div>
 
+        {/* Real-time Notification Banner */}
+        <AnimatePresence>
+          {newDocNotification && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto' }}
+              exit={{ opacity: 0, y: -20, height: 0 }}
+              className={`mx-6 mb-2 px-4 py-3 rounded-xl flex items-center gap-3 ${
+                isDark 
+                  ? 'bg-green-900/30 border border-green-500/30 text-green-400' 
+                  : 'bg-green-100 border border-green-300 text-green-700'
+              }`}
+            >
+              <Radio className="w-5 h-5 animate-pulse" />
+              <span className="flex-1 text-sm font-medium">{newDocNotification}</span>
+              <button 
+                onClick={() => setNewDocNotification(null)}
+                className="hover:opacity-70"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Documents Grid */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 pt-6">

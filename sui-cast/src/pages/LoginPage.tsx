@@ -451,7 +451,7 @@ function LoginPage({ theme, setTheme }: LoginPageProps) {
                     WebkitTextFillColor: 'transparent',
                   }}
                 >
-                  42 Pedagogy dApp
+                  Sui-Cast
                 </motion.span>
               </AnimatePresence>
             </motion.h1>
@@ -600,9 +600,6 @@ function LoginPage({ theme, setTheme }: LoginPageProps) {
                   <span className="flex items-center gap-1">
                     <Wallet className="w-3 h-3" />
                     Wallet connect
-                  </span>
-                  <span className={`uppercase tracking-wide text-[10px] ${isDark ? 'text-slate-400' : 'text-[#A59D84]/70'}`}>
-                    dApp Kit
                   </span>
                 </div>
                 <ConnectButton />
