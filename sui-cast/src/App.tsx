@@ -298,7 +298,7 @@ function LoginPage() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setTheme(isDark ? 'light' : 'dark')}
-          className={`relative w-16 h-8 rounded-full p-1 transition-colors duration-300 backdrop-blur-sm border ${
+          className={`relative w-16 h-8 rounded-full p-1 transition-colors duration: 300 backdrop-blur-sm border ${
             isDark ? 'border-[#5C3E94]/40' : 'border-[#A59D84]/40'
           }`}
           style={isDark 
@@ -398,21 +398,29 @@ function LoginPage() {
 
             <motion.h1 
               className="text-4xl font-bold tracking-tight"
-              style={isDark ? {
-                background: 'linear-gradient(135deg, #F25912 0%, #5C3E94 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text'
-              } : {
-                background: 'linear-gradient(135deg, #A59D84 0%, #C1BAA1 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text'
-              }}
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 300 }}
             >
-              42 Pedagogy dApp
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={isDark ? 'dark-title' : 'light-title'}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{
+                    display: 'inline-block',
+                    background: isDark 
+                      ? 'linear-gradient(135deg, #F25912 0%, #5C3E94 100%)'
+                      : 'linear-gradient(135deg, #A59D84 0%, #C1BAA1 100%)',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                  }}
+                >
+                  42 Pedagogy dApp
+                </motion.span>
+              </AnimatePresence>
             </motion.h1>
             <p className={`text-lg ${isDark ? 'text-slate-300' : 'text-[#A59D84] font-medium'}`}>
               Simple and secure sign-in on Sui.
