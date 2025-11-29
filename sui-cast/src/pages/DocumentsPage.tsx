@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Upload, FileText, Heart, Trophy, Medal, Award, Moon, Sun, User, X, ExternalLink, Loader2, LogOut, CloudUpload, CheckCircle, AlertCircle, Radio, Wifi, WifiOff } from 'lucide-react';
+import { Search, Upload, FileText, Heart, Trophy, Medal, Award, Moon, Sun, User, X, ExternalLink, Loader2, LogOut, CloudUpload, CheckCircle, AlertCircle, Radio, Bell, BellRing } from 'lucide-react';
 import { useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
 import {
   useCreateStudentProfile,
@@ -16,6 +16,7 @@ import {
   isSurfluxConfigured,
   type DocumentUploadedEvent,
   type DocumentVotedEvent,
+  type ParsedDocumentEvent,
 } from '../lib/surflux';
 
 interface Document {
@@ -57,6 +58,8 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
   // Surflux Real-time Stream State
   const [realtimeEnabled, setRealtimeEnabled] = useState(true);
   const [newDocNotification, setNewDocNotification] = useState<string | null>(null);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
 
   
   // Walrus upload state
@@ -121,6 +124,9 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
     
     // Doküman listesini yenile
     refetchDocuments();
+    
+    // Notification count artır
+    setNotificationCount(prev => prev + 1);
   }, [refetchDocuments]);
 
   // Doküman oy aldığında çağrılır
@@ -129,12 +135,16 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
     
     // Doküman listesini yenile (yeni vote count için)
     refetchDocuments();
+    
+    // Notification count artır
+    setNotificationCount(prev => prev + 1);
   }, [refetchDocuments]);
 
   // Surflux real-time stream hook
   const { 
     status: streamStatus, 
     isConnected: isStreamConnected,
+    recentEvents,
   } = useDocumentEventStream({
     onDocumentUploaded: handleDocumentUploaded,
     onDocumentVoted: handleDocumentVoted,
@@ -234,6 +244,8 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
           continue;
         }
 
+        // Başarılı! State'leri güncelle
+        setWalrusUploading(false);
         setWalrusUploadStatus('success');
         setUploadForm(prev => ({ ...prev, walrusBlobId: blobId }));
         return blobId;
@@ -246,6 +258,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
 
     // Tüm endpoint'ler başarısız olduysa
     console.error('Walrus upload hatası - tüm publisher\'lar başarısız:', lastError);
+    setWalrusUploading(false);
     setWalrusUploadStatus('error');
     setWalrusError(lastError?.message || 'Tüm Walrus publisher\'lar başarısız oldu');
     throw lastError || new Error('Walrus upload başarısız');
@@ -618,31 +631,144 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
             />
           </motion.div>
 
-          {/* Surflux Real-time Stream Status Indicator */}
+          {/* Surflux Real-time Notification Bell */}
           {isSurfluxConfigured() && (
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
-              className={`h-16 flex items-center gap-2 px-4 rounded-2xl border-2 cursor-pointer ${
-                isDark 
-                  ? 'border-[#5C3E94] bg-[#412B6B]' 
-                  : 'border-[#A59D84] bg-[#D7D3BF]'
-              }`}
-              onClick={() => setRealtimeEnabled(!realtimeEnabled)}
-              title={isStreamConnected ? 'Real-time aktif (kapatmak için tıkla)' : 'Real-time kapalı (açmak için tıkla)'}
+              className="relative"
             >
-              {isStreamConnected ? (
-                <Wifi className="w-5 h-5 text-green-500 animate-pulse" />
-              ) : streamStatus === 'connecting' ? (
-                <Loader2 className="w-5 h-5 text-yellow-500 animate-spin" />
-              ) : (
-                <WifiOff className={`w-5 h-5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
-              )}
-              <span className={`text-xs font-medium hidden sm:block ${
-                isDark ? 'text-slate-300' : 'text-slate-700'
-              }`}>
-                {isStreamConnected ? 'Live' : streamStatus === 'connecting' ? 'Bağlanıyor...' : 'Offline'}
-              </span>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`h-16 w-16 flex items-center justify-center rounded-2xl border-2 cursor-pointer relative ${
+                  isDark 
+                    ? 'border-[#5C3E94] bg-[#412B6B] hover:bg-[#5C3E94]' 
+                    : 'border-[#A59D84] bg-[#D7D3BF] hover:bg-[#C1BAA1]'
+                }`}
+                onClick={() => {
+                  setShowNotificationDropdown(!showNotificationDropdown);
+                  if (notificationCount > 0) {
+                    setNotificationCount(0);
+                  }
+                }}
+                title={isStreamConnected ? 'Bildirimler (Bağlı)' : 'Bildirimler (Bağlanıyor...)'}
+              >
+                {notificationCount > 0 ? (
+                  <BellRing className={`w-6 h-6 ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'} animate-pulse`} />
+                ) : (
+                  <Bell className={`w-6 h-6 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} />
+                )}
+                
+                {/* Notification Badge */}
+                {notificationCount > 0 && (
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center"
+                  >
+                    {notificationCount > 9 ? '9+' : notificationCount}
+                  </motion.span>
+                )}
+                
+                {/* Connection Status Dot */}
+                <span className={`absolute bottom-2 right-2 w-2 h-2 rounded-full ${
+                  isStreamConnected ? 'bg-green-500' : 
+                  streamStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-gray-400'
+                }`} />
+              </motion.button>
+              
+              {/* Notification Dropdown */}
+              <AnimatePresence>
+                {showNotificationDropdown && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                    className={`absolute top-20 right-0 w-72 max-h-80 overflow-y-auto rounded-xl border-2 shadow-2xl z-50 ${
+                      isDark 
+                        ? 'bg-[#2d1f45] border-[#5C3E94]' 
+                        : 'bg-white border-[#C1BAA1]'
+                    }`}
+                  >
+                    <div className={`p-3 border-b ${
+                      isDark ? 'border-[#5C3E94]' : 'border-[#C1BAA1]'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <h3 className={`font-semibold ${
+                          isDark ? 'text-slate-200' : 'text-slate-800'
+                        }`}>Bildirimler</h3>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          isStreamConnected 
+                            ? 'bg-green-500/20 text-green-500' 
+                            : 'bg-yellow-500/20 text-yellow-500'
+                        }`}>
+                          {isStreamConnected ? '● Canlı' : '○ Bağlanıyor'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {recentEvents.length === 0 ? (
+                      <div className={`p-6 text-center ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
+                      }`}>
+                        <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">Henüz bildirim yok</p>
+                        <p className="text-xs mt-1">Yeni dokümanlar burada görünecek</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-opacity-20">
+                        {recentEvents.slice(0, 10).map((event, index) => (
+                          <div
+                            key={`${event.txHash}-${index}`}
+                            className={`p-3 hover:bg-opacity-50 transition-colors ${
+                              isDark ? 'hover:bg-[#412B6B]' : 'hover:bg-[#ECEBDE]'
+                            }`}
+                          >
+                            {event.eventType === 'DocumentUploaded' ? (
+                              <div className="flex items-start gap-2">
+                                <FileText className={`w-4 h-4 mt-0.5 ${
+                                  isDark ? 'text-green-400' : 'text-green-600'
+                                }`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-medium truncate ${
+                                    isDark ? 'text-slate-200' : 'text-slate-800'
+                                  }`}>
+                                    {(event.data as DocumentUploadedEvent).title}
+                                  </p>
+                                  <p className={`text-xs ${
+                                    isDark ? 'text-slate-400' : 'text-slate-500'
+                                  }`}>
+                                    Yeni doküman yüklendi
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-start gap-2">
+                                <Heart className={`w-4 h-4 mt-0.5 ${
+                                  isDark ? 'text-red-400' : 'text-red-500'
+                                }`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm ${
+                                    isDark ? 'text-slate-200' : 'text-slate-800'
+                                  }`}>
+                                    Yeni oy: {(event.data as DocumentVotedEvent).new_vote_count} beğeni
+                                  </p>
+                                  <p className={`text-xs truncate ${
+                                    isDark ? 'text-slate-400' : 'text-slate-500'
+                                  }`}>
+                                    {(event.data as DocumentVotedEvent).document_id.slice(0, 20)}...
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
 
@@ -1068,10 +1194,10 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.8, y: 50 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-8"
+              className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-8 overflow-y-auto"
             >
               <div
-                className={`relative w-full max-w-lg rounded-2xl shadow-2xl border-2 overflow-hidden ${
+                className={`relative w-full max-w-lg my-4 sm:my-0 rounded-2xl shadow-2xl border-2 ${
                   isDark 
                     ? 'bg-[#412B6B] border-[#5C3E94]' 
                     : 'bg-white border-[#C1BAA1]'
@@ -1092,28 +1218,28 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
                 </motion.button>
 
                 {/* Modal Header */}
-                <div className={`p-6 border-b ${isDark ? 'border-[#5C3E94]/30' : 'border-[#C1BAA1]/30'}`}>
+                <div className={`p-4 sm:p-6 border-b sticky top-0 z-10 ${isDark ? 'border-[#5C3E94]/30 bg-[#412B6B]' : 'border-[#C1BAA1]/30 bg-white'}`}>
                   <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${
                       isDark ? 'bg-[#5C3E94]/30' : 'bg-[#A59D84]/20'
                     }`}>
-                      <Upload className={`w-6 h-6 ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`} />
+                      <Upload className={`w-5 h-5 sm:w-6 sm:h-6 ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`} />
                     </div>
-                    <h2 className={`text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                    <h2 className={`text-xl sm:text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
                       Yeni Döküman Yükle
                     </h2>
                   </div>
                 </div>
 
                 {/* Modal Body */}
-                <div className="p-6 space-y-4">
+                <div className="p-4 sm:p-6 space-y-4 max-h-[60vh] sm:max-h-[70vh] overflow-y-auto">
                   {/* Dosya Yükleme Alanı */}
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                       Dosya Seç (Walrus'a yüklenecek)
                     </label>
                     <div
-                      className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-all ${
+                      className={`relative border-2 border-dashed rounded-xl p-4 sm:p-6 text-center transition-all ${
                         walrusUploadStatus === 'success'
                           ? isDark ? 'border-green-500/60 bg-green-500/10' : 'border-green-500/60 bg-green-50'
                           : walrusUploadStatus === 'error'

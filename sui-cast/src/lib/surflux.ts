@@ -75,7 +75,7 @@ export function useSurfluxStream(options?: {
   const eventSourceRef = useRef<EventSource | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [lastError, setLastError] = useState<Error | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
 
   const connect = useCallback(() => {
@@ -189,6 +189,8 @@ export function useDocumentEventStream(options?: {
 }) {
   const { onDocumentUploaded, onDocumentVoted, enabled = true } = options || {};
   const [recentEvents, setRecentEvents] = useState<ParsedDocumentEvent[]>([]);
+  const processedTxHashes = useRef<Set<string>>(new Set());
+  const isFirstConnection = useRef(true);
 
   const handleEvent = useCallback((event: SurfluxEvent) => {
     // Sadece package_event'leri işle
@@ -198,6 +200,19 @@ export function useDocumentEventStream(options?: {
     
     // Bizim package'ımıza ait event mi kontrol et
     if (!eventType.includes(PACKAGE_ID)) return;
+
+    // Daha önce işlenmiş event'i tekrar işleme (duplicate prevention)
+    if (processedTxHashes.current.has(event.tx_hash)) {
+      console.log('[Surflux] Skipping duplicate event:', event.tx_hash);
+      return;
+    }
+    processedTxHashes.current.add(event.tx_hash);
+    
+    // Set'i 1000 elemandan fazla büyümesin diye temizle
+    if (processedTxHashes.current.size > 1000) {
+      const entries = Array.from(processedTxHashes.current);
+      processedTxHashes.current = new Set(entries.slice(-500));
+    }
 
     const contents = event.data.contents as Record<string, unknown>;
 
@@ -221,7 +236,10 @@ export function useDocumentEventStream(options?: {
         data: uploadEvent,
       }, ...prev.slice(0, 49)]); // Son 50 event'i tut
 
-      onDocumentUploaded?.(uploadEvent, event.tx_hash);
+      // İlk bağlantıda eski event'ler için callback çağırma
+      if (!isFirstConnection.current) {
+        onDocumentUploaded?.(uploadEvent, event.tx_hash);
+      }
     }
 
     // DocumentVoted event
@@ -241,8 +259,17 @@ export function useDocumentEventStream(options?: {
         data: voteEvent,
       }, ...prev.slice(0, 49)]);
 
-      onDocumentVoted?.(voteEvent, event.tx_hash);
+      // İlk bağlantıda eski event'ler için callback çağırma
+      if (!isFirstConnection.current) {
+        onDocumentVoted?.(voteEvent, event.tx_hash);
+      }
     }
+    
+    // İlk event işlendikten sonra flag'i false yap (bundan sonraki event'ler yeni)
+    // Küçük bir gecikme ile, stream'in başlangıç event'lerini atlaması için
+    setTimeout(() => {
+      isFirstConnection.current = false;
+    }, 2000);
   }, [onDocumentUploaded, onDocumentVoted]);
 
   const streamState = useSurfluxStream({
@@ -253,7 +280,10 @@ export function useDocumentEventStream(options?: {
   return {
     ...streamState,
     recentEvents,
-    clearEvents: () => setRecentEvents([]),
+    clearEvents: () => {
+      setRecentEvents([]);
+      processedTxHashes.current.clear();
+    },
   };
 }
 
