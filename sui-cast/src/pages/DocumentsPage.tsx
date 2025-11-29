@@ -1,6 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Upload, FileText, Heart, Trophy, Medal, Award, Moon, Sun, User, X, ExternalLink } from 'lucide-react';
+import { Search, Upload, FileText, Heart, Trophy, Medal, Award, Moon, Sun, User, X, ExternalLink, Loader2 } from 'lucide-react';
+import { useCurrentAccount } from '@mysten/dapp-kit';
+import {
+  useCreateStudentProfile,
+  useUploadDocument,
+  useVoteDocument,
+  useStudentProfile,
+  useLibraryStats,
+  useDocuments,
+} from '../lib/hooks';
 
 interface Document {
   id: string;
@@ -8,7 +17,8 @@ interface Document {
   author: string;
   likes: number;
   blobId: string;
-  description: string; // Yükleyen kişinin girdiği açıklama
+  description: string;
+  category?: string;
 }
 
 interface LeaderboardUser {
@@ -25,17 +35,111 @@ type DocumentsPageProps = {
 function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadForm, setUploadForm] = useState({
+    title: '',
+    description: '',
+    walrusBlobId: '',
+    category: '',
+  });
   const isDark = theme === 'dark';
 
-  // Mock data
-  const documents: Document[] = [
+  // Sui Hooks - Wallet bağlantısı
+  const account = useCurrentAccount();
+  const walletAddress = account?.address;
+  
+  // zkLogin adresi sessionStorage'dan al
+  const [zkLoginAddress, setZkLoginAddress] = useState<string | null>(null);
+  const [zkLoginUserInfo, setZkLoginUserInfo] = useState<{
+    email?: string;
+    name?: string;
+    picture?: string;
+  } | null>(null);
+  
+  // Aktif adres: önce wallet, sonra zkLogin
+  const address = walletAddress || zkLoginAddress;
+  
+  // zkLogin bilgilerini yükle
+  useEffect(() => {
+    const storedAddress = sessionStorage.getItem('zklogin_address');
+    const storedUserInfo = sessionStorage.getItem('zklogin_user_info');
+    
+    if (storedAddress) {
+      setZkLoginAddress(storedAddress);
+      console.log('zkLogin adresi yüklendi:', storedAddress);
+    }
+    if (storedUserInfo) {
+      try {
+        setZkLoginUserInfo(JSON.parse(storedUserInfo));
+      } catch (e) {
+        console.error('zkLogin user info parse hatası:', e);
+      }
+    }
+  }, []);
+
+  const { execute: createProfile, isPending: isCreatingProfile } = useCreateStudentProfile();
+  const { execute: uploadDoc, isPending: isUploading } = useUploadDocument();
+  const { execute: vote, isPending: isVoting } = useVoteDocument();
+
+  const { profile, loading: profileLoading, refetch: refetchProfile } = useStudentProfile(address || undefined);
+  const { stats, refetch: refetchStats } = useLibraryStats();
+  const { documents: blockchainDocs, loading: docsLoading, refetch: refetchDocuments } = useDocuments();
+
+  // İlk yüklemede verileri çek
+  useEffect(() => {
+    if (address) {
+      refetchProfile();
+    }
+    refetchStats();
+    refetchDocuments();
+  }, [address]);
+
+  // Profil oluştur
+  const handleCreateProfile = async () => {
+    try {
+      await createProfile();
+      setTimeout(() => refetchProfile(), 2000);
+    } catch (error) {
+      console.error('Profil oluşturma hatası:', error);
+    }
+  };
+
+  // Döküman yükle
+  const handleUploadDocument = async () => {
+    if (!profile) {
+      alert('Önce profil oluşturmalısınız!');
+      return;
+    }
+
+    try {
+      await uploadDoc(
+        profile.id,
+        uploadForm.title,
+        uploadForm.description,
+        uploadForm.walrusBlobId,
+        uploadForm.category
+      );
+      setUploadForm({ title: '', description: '', walrusBlobId: '', category: '' });
+      setShowUploadModal(false);
+      setTimeout(() => {
+        refetchProfile();
+        refetchDocuments();
+      }, 2000);
+    } catch (error) {
+      console.error('Döküman yükleme hatası:', error);
+    }
+  };
+
+  // Blockchain'den gelen dökümanları Document tipine dönüştür
+  // Eğer blockchain'den veri yoksa mock data kullan
+  const mockDocuments: Document[] = [
     { 
       id: '1', 
       title: 'Push_Swap', 
       author: '0x12...ab', 
       likes: 124, 
       blobId: 'blob123', 
-      description: 'Bu proje, iki yığın kullanarak sayıları sıralama algoritmasını içerir. Verimli algoritma kullanımı ve optimizasyon teknikleri uygulanmıştır.' 
+      description: 'Bu proje, iki yığın kullanarak sayıları sıralama algoritmasını içerir.' 
     },
     { 
       id: '2', 
@@ -43,7 +147,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
       author: '0x34...cd', 
       likes: 98, 
       blobId: 'blob456', 
-      description: 'Klasik filozoflar yemek problemi üzerine thread ve mutex kullanımını içeren bir proje. Deadlock ve race condition çözümleri içerir.' 
+      description: 'Klasik filozoflar yemek problemi üzerine thread ve mutex kullanımını içeren bir proje.' 
     },
     { 
       id: '3', 
@@ -51,7 +155,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
       author: '0x56...ef', 
       likes: 156, 
       blobId: 'blob789', 
-      description: 'Bash benzeri bir shell uygulaması. Pipe, redirection, environment variables ve built-in komutlar içerir.' 
+      description: 'Bash benzeri bir shell uygulaması. Pipe, redirection, environment variables içerir.' 
     },
     { 
       id: '4', 
@@ -59,9 +163,22 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
       author: '0x78...gh', 
       likes: 87, 
       blobId: 'blob012', 
-      description: 'Raycasting tekniği kullanılarak yapılmış 3D labirent oyunu. Wolfenstein 3D tarzında bir first-person görünüm sunar.' 
+      description: 'Raycasting tekniği kullanılarak yapılmış 3D labirent oyunu.' 
     },
   ];
+
+  // Blockchain dökümanlarını UI formatına dönüştür
+  const documents: Document[] = blockchainDocs.length > 0 
+    ? blockchainDocs.map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        author: `${doc.uploader.slice(0, 6)}...${doc.uploader.slice(-4)}`,
+        likes: doc.votes,
+        blobId: doc.walrusBlobId,
+        description: doc.description || 'Açıklama yok',
+        category: doc.category,
+      }))
+    : mockDocuments;
 
   const leaderboard: LeaderboardUser[] = [
     { rank: 1, address: '0x12...ab', points: 1250 },
@@ -84,15 +201,44 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
     }
   };
 
-  const handleLike = (docId: string) => {
-    console.log('Liked document:', docId);
-    // Sui'ye sinyal gönder
+  // Blockchain'e oy gönder
+  const handleLike = async (docId: string) => {
+    if (!address) {
+      alert('Lütfen cüzdanınızı bağlayın!');
+      return;
+    }
+
+    // Mock document ise gerçek oy gönderme
+    if (docId.length < 10) {
+      console.log('Mock document, skipping blockchain vote');
+      return;
+    }
+
+    try {
+      await vote(docId);
+      setTimeout(() => refetchDocuments(), 2000);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('E_ALREADY_VOTED') || errorMessage.includes('0')) {
+        alert('Bu dökümana zaten oy verdiniz!');
+      } else if (errorMessage.includes('E_CANNOT_VOTE_OWN_DOCUMENT') || errorMessage.includes('1')) {
+        alert('Kendi dökümanınıza oy veremezsiniz!');
+      } else {
+        console.error('Oy verme hatası:', error);
+      }
+    }
   };
 
   const openWalrusLink = (blobId: string) => {
-    const walrusUrl = `https://walrus.site/${blobId}`;
+    const walrusUrl = `https://aggregator.walrus-testnet.walrus.space/v1/${blobId}`;
     window.open(walrusUrl, '_blank');
   };
+
+  // Arama filtreleme
+  const filteredDocuments = documents.filter(doc =>
+    doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    doc.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div
@@ -137,6 +283,78 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
             </motion.div>
           ))}
         </div>
+
+        {/* Stats */}
+        <div className={`mt-4 p-3 rounded-lg border ${
+          isDark ? 'border-[#5C3E94]/30 bg-[#412B6B]/30' : 'border-[#A59D84]/30 bg-[#ECEBDE]/50'
+        }`}>
+          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`}>
+            Toplam Döküman
+          </p>
+          <p className={`text-2xl font-bold ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`}>
+            {stats?.totalDocuments || documents.length}
+          </p>
+        </div>
+
+        {/* zkLogin Kullanıcı Bilgisi */}
+        {zkLoginUserInfo && (
+          <div className={`mt-3 p-3 rounded-lg border ${
+            isDark ? 'border-[#5C3E94]/30 bg-[#412B6B]/30' : 'border-[#A59D84]/30 bg-[#ECEBDE]/50'
+          }`}>
+            <div className="flex items-center gap-2">
+              {zkLoginUserInfo.picture && (
+                <img 
+                  src={zkLoginUserInfo.picture} 
+                  alt="Profile" 
+                  className="w-8 h-8 rounded-full"
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-medium truncate ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                  {zkLoginUserInfo.name || zkLoginUserInfo.email}
+                </p>
+                <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`}>
+                  zkLogin
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Profil Durumu */}
+        {address && (
+          <div className={`mt-3 p-3 rounded-lg border ${
+            isDark ? 'border-[#5C3E94]/30 bg-[#412B6B]/30' : 'border-[#A59D84]/30 bg-[#ECEBDE]/50'
+          }`}>
+            {profileLoading ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className={`w-4 h-4 animate-spin ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`} />
+                <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`}>Yükleniyor...</span>
+              </div>
+            ) : profile ? (
+              <div>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-[#A59D84]'}`}>Profilim</p>
+                <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                  {profile.totalUploads} yükleme
+                </p>
+              </div>
+            ) : (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleCreateProfile}
+                disabled={isCreatingProfile || !walletAddress}
+                className={`w-full py-2 px-3 rounded-lg text-xs font-medium ${
+                  isDark 
+                    ? 'bg-[#F25912] text-white hover:bg-[#F25912]/80' 
+                    : 'bg-[#A59D84] text-white hover:bg-[#A59D84]/80'
+                } disabled:opacity-50`}
+              >
+                {isCreatingProfile ? 'Oluşturuluyor...' : zkLoginAddress && !walletAddress ? 'Cüzdan Bağla (zkLogin profil için)' : 'Profil Oluştur'}
+              </motion.button>
+            )}
+          </div>
+        )}
       </motion.div>
 
       {/* Ana içerik alanı */}
@@ -173,6 +391,13 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
             animate={{ scale: 1 }}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              if (!profile) {
+                alert('Önce sol panelden profil oluşturmalısınız!');
+                return;
+              }
+              setShowUploadModal(true);
+            }}
             className={`h-16 flex items-center gap-3 px-6 rounded-2xl border-2 font-semibold transition-all ${
               isDark 
                 ? 'border-[#5C3E94] bg-[#412B6B] hover:bg-[#5C3E94] text-slate-200' 
@@ -291,8 +516,13 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
 
         {/* Documents Grid */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 pt-6">
+          {docsLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <Loader2 className={`w-8 h-8 animate-spin ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`} />
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {documents.map((doc, index) => (
+            {filteredDocuments.map((doc, index) => (
               <motion.div
                 key={doc.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -336,14 +566,15 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
                     e.stopPropagation(); // Prevent modal from opening
                     handleLike(doc.id);
                   }}
+                  disabled={isVoting}
                   className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium ${
                     isDark 
                       ? 'bg-[#F25912] text-white hover:bg-[#F25912]/80' 
                       : 'bg-[#C1BAA1] text-white hover:bg-[#C1BAA1]/80'
-                  }`}
+                  } disabled:opacity-50`}
                 >
                   <Heart className="w-4 h-4" />
-                  BEĞEN ({doc.likes})
+                  {isVoting ? '...' : `BEĞEN (${doc.likes})`}
                 </motion.button>
 
                 <p className={`text-[10px] mt-2 text-center ${isDark ? 'text-slate-500' : 'text-[#A59D84]/60'}`}>
@@ -352,6 +583,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
               </motion.div>
             ))}
           </div>
+          )}
         </div>
       </div>
 
@@ -454,14 +686,15 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={() => handleLike(selectedDoc.id)}
+                      disabled={isVoting}
                       className={`flex items-center justify-center gap-3 py-4 px-6 rounded-xl text-lg font-semibold shadow-lg ${
                         isDark 
                           ? 'bg-[#F25912] text-white hover:bg-[#F25912]/80' 
                           : 'bg-[#C1BAA1] text-white hover:bg-[#C1BAA1]/80'
-                      }`}
+                      } disabled:opacity-50`}
                     >
                       <Heart className="w-6 h-6" />
-                      {selectedDoc.likes}
+                      {isVoting ? '...' : selectedDoc.likes}
                     </motion.button>
                   </div>
 
@@ -469,6 +702,168 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
                   <p className={`text-xs text-center ${isDark ? 'text-slate-500' : 'text-[#A59D84]/60'}`}>
                     Walrus linkine tıkladığınızda dosya içeriğini görüntüleyebilirsiniz. 
                     Beğeni butonu Sui blockchain&apos;e sinyal gönderir.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Upload Modal */}
+      <AnimatePresence>
+        {showUploadModal && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowUploadModal(false)}
+              className="fixed inset-0 z-40"
+              style={{
+                backdropFilter: 'blur(10px)',
+                backgroundColor: isDark ? 'rgba(33, 24, 50, 0.8)' : 'rgba(236, 235, 222, 0.8)'
+              }}
+            />
+
+            {/* Modal Content */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, y: 50 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 50 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-8"
+            >
+              <div
+                className={`relative w-full max-w-lg rounded-2xl shadow-2xl border-2 overflow-hidden ${
+                  isDark 
+                    ? 'bg-[#412B6B] border-[#5C3E94]' 
+                    : 'bg-white border-[#C1BAA1]'
+                }`}
+              >
+                {/* Close Button */}
+                <motion.button
+                  whileHover={{ scale: 1.1, rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowUploadModal(false)}
+                  className={`absolute top-4 right-4 z-10 p-2 rounded-full ${
+                    isDark 
+                      ? 'bg-[#5C3E94] hover:bg-[#F25912]' 
+                      : 'bg-[#A59D84] hover:bg-[#C1BAA1]'
+                  }`}
+                >
+                  <X className="w-5 h-5 text-white" />
+                </motion.button>
+
+                {/* Modal Header */}
+                <div className={`p-6 border-b ${isDark ? 'border-[#5C3E94]/30' : 'border-[#C1BAA1]/30'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                      isDark ? 'bg-[#5C3E94]/30' : 'bg-[#A59D84]/20'
+                    }`}>
+                      <Upload className={`w-6 h-6 ${isDark ? 'text-[#F25912]' : 'text-[#A59D84]'}`} />
+                    </div>
+                    <h2 className={`text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                      Yeni Döküman Yükle
+                    </h2>
+                  </div>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Başlık
+                    </label>
+                    <input
+                      type="text"
+                      value={uploadForm.title}
+                      onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
+                      placeholder="Döküman başlığı"
+                      className={`w-full p-3 rounded-lg border outline-none ${
+                        isDark 
+                          ? 'bg-[#2d1f45] border-[#5C3E94]/40 text-slate-100 placeholder-slate-500 focus:border-[#F25912]' 
+                          : 'bg-white border-[#C1BAA1]/40 text-slate-900 placeholder-[#A59D84] focus:border-[#A59D84]'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Açıklama
+                    </label>
+                    <textarea
+                      value={uploadForm.description}
+                      onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
+                      placeholder="Döküman açıklaması"
+                      rows={3}
+                      className={`w-full p-3 rounded-lg border outline-none resize-none ${
+                        isDark 
+                          ? 'bg-[#2d1f45] border-[#5C3E94]/40 text-slate-100 placeholder-slate-500 focus:border-[#F25912]' 
+                          : 'bg-white border-[#C1BAA1]/40 text-slate-900 placeholder-[#A59D84] focus:border-[#A59D84]'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Walrus Blob ID
+                    </label>
+                    <input
+                      type="text"
+                      value={uploadForm.walrusBlobId}
+                      onChange={(e) => setUploadForm({ ...uploadForm, walrusBlobId: e.target.value })}
+                      placeholder="Walrus'a yüklediğiniz dosyanın blob ID'si"
+                      className={`w-full p-3 rounded-lg border outline-none ${
+                        isDark 
+                          ? 'bg-[#2d1f45] border-[#5C3E94]/40 text-slate-100 placeholder-slate-500 focus:border-[#F25912]' 
+                          : 'bg-white border-[#C1BAA1]/40 text-slate-900 placeholder-[#A59D84] focus:border-[#A59D84]'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Kategori
+                    </label>
+                    <input
+                      type="text"
+                      value={uploadForm.category}
+                      onChange={(e) => setUploadForm({ ...uploadForm, category: e.target.value })}
+                      placeholder="Örn: Matematik, Fizik, Programlama"
+                      className={`w-full p-3 rounded-lg border outline-none ${
+                        isDark 
+                          ? 'bg-[#2d1f45] border-[#5C3E94]/40 text-slate-100 placeholder-slate-500 focus:border-[#F25912]' 
+                          : 'bg-white border-[#C1BAA1]/40 text-slate-900 placeholder-[#A59D84] focus:border-[#A59D84]'
+                      }`}
+                    />
+                  </div>
+
+                  {/* Upload Button */}
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleUploadDocument}
+                    disabled={isUploading || !uploadForm.title || !uploadForm.walrusBlobId || !uploadForm.category}
+                    className={`w-full py-4 rounded-xl text-lg font-semibold shadow-lg ${
+                      isDark 
+                        ? 'bg-[#F25912] text-white hover:bg-[#F25912]/80' 
+                        : 'bg-[#A59D84] text-white hover:bg-[#A59D84]/80'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {isUploading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Yükleniyor...
+                      </span>
+                    ) : (
+                      'Dökümanı Yükle'
+                    )}
+                  </motion.button>
+
+                  <p className={`text-xs text-center ${isDark ? 'text-slate-500' : 'text-[#A59D84]/60'}`}>
+                    Döküman bilgileri Sui blockchain'e kaydedilecektir.
                   </p>
                 </div>
               </div>

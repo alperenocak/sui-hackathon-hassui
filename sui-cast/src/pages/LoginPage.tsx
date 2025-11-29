@@ -124,14 +124,29 @@ function LoginPage({ theme, setTheme }: LoginPageProps) {
 
   // 🔁 Google'dan dönüşte URL'deki id_token'ı yakala
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const idToken = url.searchParams.get('id_token');
+    // Debug log
+    console.log('=== zkLogin Redirect Debug ===');
+    console.log('Full URL:', window.location.href);
+    console.log('Hash:', window.location.hash);
+    
+    // Google OAuth id_token'ı URL fragment (#) içinde döndürür, query string (?) içinde değil
+    // Örnek: http://localhost:5173/#id_token=xxx&authuser=0
+    const hash = window.location.hash.substring(1); // # işaretini kaldır
+    const hashParams = new URLSearchParams(hash);
+    let idToken = hashParams.get('id_token');
+    
+    // Fallback: query string kontrolü
+    if (!idToken) {
+      const url = new URL(window.location.href);
+      idToken = url.searchParams.get('id_token');
+    }
+    
+    console.log('idToken:', idToken ? 'FOUND' : 'NULL');
+    
     if (!idToken) return;
 
-    url.searchParams.delete('id_token');
-    url.searchParams.delete('authuser');
-    url.searchParams.delete('prompt');
-    window.history.replaceState({}, '', url.toString());
+    // URL'i temizle (hash ve query parametrelerini kaldır)
+    window.history.replaceState({}, '', window.location.pathname);
 
     let decoded: JwtPayload;
     try {
@@ -150,6 +165,15 @@ function LoginPage({ theme, setTheme }: LoginPageProps) {
       name: decoded.name,
       picture: decoded.picture,
     });
+    
+    // zkLogin bilgilerini sessionStorage'a kaydet (DocumentsPage'de kullanılacak)
+    sessionStorage.setItem('zklogin_address', address);
+    sessionStorage.setItem('zklogin_user_info', JSON.stringify({
+      email: decoded.email,
+      name: decoded.name,
+      picture: decoded.picture,
+    }));
+    
     setZkStatus('zkLogin oturumu aktif. Bu adresle Sui üzerinde işlem yapabilirsin.');
     
     // 🚀 Auto-redirect after zkLogin

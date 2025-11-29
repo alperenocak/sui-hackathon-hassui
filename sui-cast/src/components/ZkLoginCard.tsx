@@ -150,21 +150,57 @@ const ZkLoginCard: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const idToken = url.searchParams.get('id_token');
+    // Debug: Tüm URL bilgisini logla
+    console.log('=== ZkLogin Debug ===');
+    console.log('Full URL:', window.location.href);
+    console.log('Hash:', window.location.hash);
+    console.log('Search:', window.location.search);
+    console.log('Pathname:', window.location.pathname);
 
-    if (!idToken) return;
+    // Google OAuth id_token'ı URL fragment (#) içinde döndürür, query string (?) içinde değil
+    // Örnek: https://site.com/#id_token=xxx&authuser=0
+    const hash = window.location.hash.substring(1); // # işaretini kaldır
+    console.log('Hash (without #):', hash);
+    
+    const hashParams = new URLSearchParams(hash);
+    const idToken = hashParams.get('id_token');
+    console.log('idToken from hash:', idToken ? idToken.substring(0, 30) + '...' : 'NULL');
 
-    url.searchParams.delete('id_token');
-    url.searchParams.delete('authuser');
-    url.searchParams.delete('prompt');
-    window.history.replaceState({}, '', url.toString());
+    // Session storage'da ephemeral data var mı kontrol et
+    const existingZkData = sessionStorage.getItem(SESSION_ZKLOGIN_DATA_KEY);
+    console.log('Existing zklogin_ephemeral_data:', existingZkData ? 'EXISTS' : 'NULL');
 
+    if (!idToken) {
+      // Belki query string'de gelmiştir (bazı konfigürasyonlarda)
+      const url = new URL(window.location.href);
+      const queryToken = url.searchParams.get('id_token');
+      console.log('idToken from query:', queryToken ? queryToken.substring(0, 30) + '...' : 'NULL');
+      
+      if (!queryToken) {
+        console.log('No token found, waiting for login...');
+        return;
+      }
+      // Query string'den geldiyse onu kullan
+      processToken(queryToken);
+      return;
+    }
+
+    // Hash'i temizle
+    window.history.replaceState({}, '', window.location.pathname + window.location.search);
+
+    processToken(idToken);
+  }, []);
+
+  const processToken = (idToken: string) => {
+    console.log('JWT Token alındı:', idToken.substring(0, 50) + '...');
+    
     sessionStorage.setItem(SESSION_JWT_KEY, idToken);
+    console.log('JWT sessionStorage\'a kaydedildi');
 
     let decoded: JwtPayload;
     try {
       decoded = jwtDecode<JwtPayload>(idToken);
+      console.log('JWT decoded:', decoded);
     } catch (e) {
       console.error('JWT decode hatası:', e);
       setStatus('JWT çözümlenemedi.');
@@ -182,6 +218,7 @@ const ZkLoginCard: React.FC = () => {
     const salt = getSaltFromJwt(decoded);
     const zkAddress = jwtToAddress(idToken, salt);
     setAddress(zkAddress);
+    console.log('zkLogin adresi:', zkAddress);
 
     setLoading(true);
     setStatus('ZK proof üretiliyor (prover çağrılıyor)...');
@@ -206,7 +243,7 @@ const ZkLoginCard: React.FC = () => {
         );
       })
       .finally(() => setLoading(false));
-  }, []);
+  };
 
   const handleLoginClick = async () => {
     try {
