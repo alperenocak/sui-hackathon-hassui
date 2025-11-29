@@ -43,6 +43,11 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
     walrusBlobId: '',
     category: '',
   });
+  // Report popup state
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportBlobId, setReportBlobId] = useState("");
+  const [reportTargetId, setReportTargetId] = useState("");
+
   
   // Walrus upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -91,6 +96,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
   const { profile, loading: profileLoading, refetch: refetchProfile } = useStudentProfile(address || undefined);
   const { stats, refetch: refetchStats } = useLibraryStats();
   const { documents: blockchainDocs, loading: docsLoading, refetch: refetchDocuments } = useDocuments();
+  
 
   // İlk yüklemede verileri çek
   useEffect(() => {
@@ -323,6 +329,27 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
       default:
         return <span className={`text-sm font-bold ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>{rank}</span>;
     }
+  };
+  // handle report fonksiyonu
+  const handleReport = (docId: string) => {
+    setReportTargetId(docId);   // hangi döküman raporlanıyor?
+    setShowReportModal(true);   // popup aç
+  };
+  const handleSubmitReport = () => {
+    if (!reportBlobId.trim()) {
+      alert("Lütfen bir Blob ID girin.");
+      return;
+    }
+  
+    console.log("Rapor gönderildi:", {
+      documentId: reportTargetId,
+      blobId: reportBlobId,
+    });
+  
+    alert("Rapor başarıyla gönderildi!");
+  
+    setReportBlobId("");
+    setShowReportModal(false);
   };
   
 
@@ -680,6 +707,7 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
           </motion.button>
         </div>
 
+
         {/* Documents Grid */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 pt-6">
           {docsLoading ? (
@@ -752,7 +780,6 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
           )}
         </div>
       </div>
-
       {/* Document Detail Modal */}
       <AnimatePresence>
         {selectedDoc && (
@@ -1150,7 +1177,69 @@ function DocumentsPage({ theme, setTheme }: DocumentsPageProps) {
           </>
         )}
       </AnimatePresence>
+      {/* REPORT MODAL */}
+<AnimatePresence>
+  {showReportModal && (
+    <>
+      <motion.div
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[999]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      />
+
+      <motion.div
+        className="fixed inset-0 z-[1000] flex items-center justify-center p-6"
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.8, opacity: 0 }}
+      >
+        <div
+          className={`w-full max-w-md rounded-2xl p-6 border-2 shadow-xl ${
+            isDark ? 'bg-[#412B6B] border-[#5C3E94]' : 'bg-white border-[#A59D84]'
+          }`}
+        >
+          <h2 className="text-2xl font-bold mb-4 text-center">Report Document</h2>
+
+          <label className="font-semibold mb-1 block">Blob ID:</label>
+          <input
+            type="text"
+            value={reportBlobId}
+            onChange={(e) => setReportBlobId(e.target.value)}
+            placeholder="örn: 0xabc123..."
+            className={`w-full p-3 rounded-lg border-2 mb-6 ${
+              isDark
+                ? "bg-[#2d1f45] border-[#5C3E94] text-white"
+                : "bg-white border-[#A59D84] text-black"
+            }`}
+          />
+
+          <div className="flex justify-end gap-4">
+            <button
+              onClick={() => setShowReportModal(false)}
+              className={`px-4 py-2 rounded-lg border-2 font-semibold ${
+                isDark ? "border-[#5C3E94] text-white" : "border-[#A59D84] text-black"
+              }`}
+            >
+              İptal
+            </button>
+
+            <button
+              onClick={handleSubmitReport}
+              className="px-4 py-2 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-500"
+            >
+              Gönder
+            </button>
+          </div>
+
+        </div>
+      </motion.div>
+    </>
+  )}
+</AnimatePresence>
+
     </div>
+  
   );
 }
 
