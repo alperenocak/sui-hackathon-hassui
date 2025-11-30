@@ -1,6 +1,4 @@
 module document_library::achievement_nft {
-    use sui::object::{UID, ID};
-    use sui::tx_context::TxContext;
     use sui::url::{Self, Url};
     use sui::event;
     use sui::display;
@@ -39,6 +37,7 @@ module document_library::achievement_nft {
         month: u64,
     }
 
+    #[allow(unused_field)]
     public struct AchievementTransferred has copy, drop {
         nft_id: ID,
         from: address,
@@ -298,5 +297,12 @@ module document_library::achievement_nft {
     /// Check if address is admin
     public fun is_admin(minter: &AchievementMinter, addr: address): bool {
         minter.admin == addr
+    }
+
+    // === Test Only Functions ===
+    #[test_only]
+    public fun init_for_testing(ctx: &mut TxContext) {
+        let otw = ACHIEVEMENT_NFT {};
+        init(otw, ctx)
     }
 }

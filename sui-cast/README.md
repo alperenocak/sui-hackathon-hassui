@@ -134,12 +134,40 @@ To run the project in your local environment:
    npm install
    ```
 
-3. **Start the development server:**
+3. **Configure environment variables:**
+   
+   Create a `.env` file in the root directory by copying the example:
+   ```bash
+   cp env.exemple .env
+   ```
+   
+   Then fill in the required values:
+   ```env
+   # Sui Network Configuration
+   VITE_SUI_RPC_URL="https://fullnode.testnet.sui.io:443"
+   
+   # Google OAuth for zkLogin
+   VITE_GOOGLE_CLIENT_ID="your-google-client-id.apps.googleusercontent.com"
+   VITE_ZKLOGIN_REDIRECT_URL="http://localhost:5173"
+   VITE_ZK_PROVER_URL="https://prover-dev.mystenlabs.com/v1"
+   
+   # Deployed Smart Contract IDs (Testnet)
+   VITE_PACKAGE_ID="0xbfaff760182ed4b267cbf6db6ceaa28012b2adb48a2e2db0c51023efa2f1fda7"
+   VITE_DOCUMENT_LIBRARY_ID="0xd4a75ba83ee878c99fcdbf493e4211316dc6d62492dd23ee7416135fabb1e793"
+   VITE_ACHIEVEMENT_MINTER_ID="0xf9799f420495793f17e33e3efefef4bae0d511f482e5b5eec8795322048f9496"
+   
+   # Surflux Real-time Streams (Optional - for real-time notifications)
+   VITE_SURFLUX_API_KEY="your-surflux-api-key"
+   ```
+
+   > **Note:** To get a Google Client ID, create a project in [Google Cloud Console](https://console.cloud.google.com/), enable OAuth 2.0, and add your redirect URI to the authorized redirect URIs.
+
+4. **Start the development server:**
    ```bash
    npm run dev
    ```
 
-4. **Compile Move Contracts (Optional):**
+5. **Compile Move Contracts (Optional):**
    ```bash
    cd move
    sui move build

@@ -1,6 +1,5 @@
+#[allow(unused_const)]
 module document_library::document_system {
-    use sui::object::{UID, ID};
-    use sui::tx_context::TxContext;
     use sui::table::{Self, Table};
     use sui::event;
     use sui::clock::{Self, Clock};
@@ -274,5 +273,11 @@ module document_library::document_system {
         } else {
             vector::empty<LeaderboardEntry>()
         }
+    }
+
+    // === Test Only Functions ===
+    #[test_only]
+    public fun init_for_testing(ctx: &mut TxContext) {
+        init(ctx)
     }
 }

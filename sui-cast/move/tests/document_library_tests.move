@@ -89,7 +89,7 @@ module document_library::document_library_tests {
             document_system::create_student_profile(ts::ctx(scenario));
         };
 
-        let document_id;
+        let _document_id;
         // Upload document
         {
             ts::next_tx(scenario, uploader);
@@ -110,7 +110,7 @@ module document_library::document_library_tests {
             
             // Get the document ID from the latest event or use a helper function
             // For simplicity, we'll assume we can get it somehow
-            document_id = @0x0; // This would be the actual document ID in practice
+            _document_id = @0x0; // This would be the actual document ID in practice
             
             ts::return_shared(library);
             ts::return_to_sender(scenario, profile);
@@ -120,7 +120,7 @@ module document_library::document_library_tests {
         // Vote for document
         {
             ts::next_tx(scenario, voter);
-            let mut library = ts::take_shared<document_system::DocumentLibrary>(scenario);
+            let library = ts::take_shared<document_system::DocumentLibrary>(scenario);
             let clock = clock::create_for_testing(ts::ctx(scenario));
             
             // This would fail in actual test since we need real document ID
@@ -174,7 +174,7 @@ module document_library::document_library_tests {
             let nft = ts::take_from_sender<achievement_nft::AchievementNFT>(scenario);
             
             // Check NFT details
-            let (name, _description, achievement_type, rank, month, points) = 
+            let (_name, _description, achievement_type, rank, month, points) = 
                 achievement_nft::get_achievement_details(&nft);
             
             assert!(achievement_type == 1, 2); // Monthly achievement
